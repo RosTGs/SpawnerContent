@@ -13,7 +13,8 @@ from werkzeug.utils import secure_filename
 
 from PIL import Image
 
-DEFAULT_OUTPUT_DIR = Path("output")
+BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_OUTPUT_DIR = BASE_DIR / "output"
 DEFAULT_DESKTOP_PDF = Path.home() / "Desktop" / "gemini_output.pdf"
 SETTINGS_FILE = DEFAULT_OUTPUT_DIR / "settings.json"
 
