@@ -66,6 +66,7 @@ class GenerationEntry:
     aspect_ratio: str
     resolution: str
     latest_image: Optional[str] = None
+    image_paths: List[str] = field(default_factory=list)
     background_references: List[str] = field(default_factory=list)
     detail_references: List[str] = field(default_factory=list)
     text_parts: List[str] = field(default_factory=list)
@@ -83,25 +84,49 @@ class GenerationEntry:
 
     @property
     def image_path(self) -> Optional[Path]:
-        if not self.latest_image:
+        if not self.image_paths and not self.latest_image:
             return None
-        path = Path(self.latest_image)
-        if path.exists() or path.is_absolute():
-            return path
-        fallback = DEFAULT_OUTPUT_DIR / path.name
-        return fallback
+        first = self.image_paths[0] if self.image_paths else self.latest_image
+        if not first:
+            return None
+        return self._normalize_image_path(first)
 
     @property
     def image_filename(self) -> Optional[str]:
-        path = self.image_path
-        if not path:
+        images = self.images
+        if not images:
             return None
-        return path.name
+        for image in images:
+            if image["exists"]:
+                return image["filename"]
+        return images[0]["filename"]
 
     @property
     def image_exists(self) -> bool:
-        path = self.image_path
-        return bool(path and path.exists())
+        return any(image["exists"] for image in self.images)
+
+    @property
+    def images(self) -> List[dict[str, object]]:
+        paths = self.image_paths or ([self.latest_image] if self.latest_image else [])
+        images: List[dict[str, object]] = []
+        for raw_path in paths:
+            if not raw_path:
+                continue
+            normalized = self._normalize_image_path(raw_path)
+            images.append(
+                {
+                    "filename": normalized.name,
+                    "exists": normalized.exists(),
+                }
+            )
+        return images
+
+    @staticmethod
+    def _normalize_image_path(path_str: str) -> Path:
+        path = Path(path_str)
+        if path.exists() or path.is_absolute():
+            return path
+        return DEFAULT_OUTPUT_DIR / path.name
 
 
 _generations: List[GenerationEntry] = []
@@ -250,30 +275,41 @@ def _register_generation(
 def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
     try:
         client = GeminiClient(api_key=api_key)
-        target_path = str(new_asset_path(f"generation-{entry.id}"))
-        full_prompt = _build_generation_prompt(entry.prompt)
-        result = client.generate_image(
-            prompt=full_prompt,
-            aspect_ratio=entry.aspect_ratio,
-            resolution=entry.resolution,
-            template_files=entry.all_references,
-            output_path=target_path,
-        )
-        entry.latest_image = result.image_path
-        entry.text_parts = result.text_parts
+        generated_images: List[str] = []
+        collected_text_parts: List[str] = []
+        combined_prompts: List[str] = []
+
+        for index, sheet_prompt in enumerate(entry.sheet_prompts, start=1):
+            target_path = str(new_asset_path(f"generation-{entry.id}-sheet-{index}"))
+            full_prompt = _build_generation_prompt(f"Промт листа {index}: {sheet_prompt}")
+            result = client.generate_image(
+                prompt=full_prompt,
+                aspect_ratio=entry.aspect_ratio,
+                resolution=entry.resolution,
+                template_files=entry.all_references,
+                output_path=target_path,
+            )
+            generated_images.append(result.image_path)
+            collected_text_parts.extend(result.text_parts)
+            combined_prompts.append(full_prompt)
+
+        entry.latest_image = generated_images[-1] if generated_images else None
+        entry.image_paths = generated_images
+        entry.text_parts = collected_text_parts
         entry.status = "ready"
         save_metadata(
             SheetRecord(
                 name=f"Generation {entry.id}",
-                prompt=full_prompt,
+                prompt="\n\n".join(combined_prompts) if combined_prompts else entry.prompt,
                 aspect_ratio=entry.aspect_ratio,
                 resolution=entry.resolution,
                 template_files={
                     "background_references": entry.background_references,
                     "detail_references": entry.detail_references,
                 },
-                latest_image=result.image_path,
-                text_parts=result.text_parts,
+                latest_image=entry.latest_image,
+                images=generated_images,
+                text_parts=collected_text_parts,
             )
         )
         flash("Изображение готово и добавлено в список.", "success")

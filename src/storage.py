@@ -26,6 +26,7 @@ class SheetRecord:
     resolution: str = "1K"
     template_files: Dict[str, object] = field(default_factory=dict)
     latest_image: Optional[str] = None
+    images: List[str] = field(default_factory=list)
     text_parts: List[str] = field(default_factory=list)
 
     def to_json(self) -> str:
