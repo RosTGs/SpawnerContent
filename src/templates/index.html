@@ -262,6 +262,57 @@
         width: 100%;
         justify-content: center;
       }
+      .status-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #475569;
+        font-size: 13px;
+      }
+      .live-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+        display: inline-block;
+        box-shadow: 0 0 0 6px #22c55e22;
+      }
+      .lightbox {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.75);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 30;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+      .lightbox.visible {
+        opacity: 1;
+        pointer-events: all;
+      }
+      .lightbox img {
+        max-width: min(90vw, 1200px);
+        max-height: 90vh;
+        border-radius: 12px;
+        box-shadow: 0 20px 80px rgba(0, 0, 0, 0.4);
+      }
+      .lightbox .close {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        background: #0f172a;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -284,17 +335,17 @@
           <div class="header-actions">
             <div>
               <div style="font-weight: 700; font-size: 16px;">Прогресс генераций</div>
-              <p style="margin: 4px 0 0; color: #475569;">Готово {{ progress.completed }} из {{ progress.total }} изображений.</p>
+              <p style="margin: 4px 0 0; color: #475569;">Готово <span id="progress-completed">{{ progress.completed }}</span> из <span id="progress-total">{{ progress.total }}</span> изображений.</p>
             </div>
             {% if progress.active %}
-              <span class="badge generating">В работе: {{ progress.active }}</span>
+              <span id="progress-active" class="badge generating">В работе: {{ progress.active }}</span>
             {% else %}
-              <span class="badge ready">Очередь свободна</span>
+              <span id="progress-active" class="badge ready">Очередь свободна</span>
             {% endif %}
           </div>
           <div class="progress-bar">
             {% set percent = (progress.completed / progress.total * 100) | round(0, 'floor') if progress.total else 0 %}
-            <span style="width: {{ percent }}%;"></span>
+            <span id="progress-bar" style="width: {{ percent }}%;"></span>
           </div>
         </div>
       </div>
@@ -325,6 +376,9 @@
           <p style="margin: 0; color: #475569;">Если оставить поле пустым, подставится сохранённый в настройках API ключ.</p>
         </div>
         <button class="button" type="submit">Запустить генерацию</button>
+      </div>
+      <div id="form-live-status" class="status-note" style="display: none; margin: 8px 0 0;">
+        ⏳ Генерация запущена. Страница автоматически обновит статус загрузки изображений.
       </div>
 
       <div class="row">
@@ -415,7 +469,7 @@
                 <form method="post" action="{{ url_for('export_pdf_route', generation_id=gen.id) }}">
                   <button class="button secondary" type="submit" {% if not gen.approved %}disabled{% endif %}>Сделать PDF</button>
                 </form>
-                <span class="badge {{ gen.status }}">{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
+                <span class="badge {{ gen.status }}" data-status-badge>{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
               </div>
             </div>
 
@@ -424,6 +478,11 @@
                 🔄 Генерация продолжается — дождитесь завершения, чтобы не запускать лишние запросы.
               </div>
             {% endif %}
+
+            {% set ready_count = gen.images | selectattr('status', 'in', ['ready', 'approved']) | list | length %}
+            <div class="status-note" data-gen-progress="{{ gen.id }}" style="margin-top: 8px;">
+              📥 Загружено <strong data-ready-count>{{ ready_count }}</strong> / {{ gen.images|length }} изображений.
+            </div>
 
             <div class="grid" style="margin-top: 8px;">
               <div>
@@ -475,15 +534,17 @@
               {% if images %}
                 <div class="preview-grid">
                   {% for image in images %}
-                    <div class="image-card">
-                      {% if image.exists %}
-                        <img src="{{ url_for('serve_asset', filename=image.asset_name) }}" alt="Результат листа {{ loop.index }}">
-                      {% else %}
-                        <div class="placeholder">Файл {{ image.filename }} не найден. Проверьте путь и перезапустите генерацию.</div>
-                      {% endif %}
+                    <div class="image-card" data-image-card="{{ image.index }}" data-gen-id="{{ gen.id }}">
+                      <div class="image-visual" data-image-visual data-image-index="{{ image.index }}">
+                        {% if image.exists %}
+                          <img data-preview-img src="{{ url_for('serve_asset', filename=image.asset_name) }}" alt="Результат листа {{ loop.index }}">
+                        {% else %}
+                          <div class="placeholder">Файл {{ image.filename }} не найден. Проверьте путь и перезапустите генерацию.</div>
+                        {% endif %}
+                      </div>
                       <div class="chip-row">
-                        <span class="chip">{{ STATUS_LABELS.get(image.status, image.status) }}</span>
-                        {% if image.approved %}<span class="chip">★ понравилось</span>{% endif %}
+                        <span class="chip" data-image-status>{{ STATUS_LABELS.get(image.status, image.status) }}</span>
+                        {% if image.approved %}<span class="chip" data-image-approved>★ понравилось</span>{% endif %}
                       </div>
                       <div class="actions">
                         <form method="post" action="{{ url_for('approve_image', generation_id=gen.id, image_index=image.index) }}">
@@ -510,9 +571,23 @@
       <p style="color: #94a3b8;">Пока нет генераций. Добавьте промт и нажмите «Запустить генерацию».</p>
     {% endif %}
 
+    <div id="lightbox" class="lightbox">
+      <button class="close" type="button" aria-label="Закрыть предпросмотр">×</button>
+      <img id="lightbox-image" src="" alt="Просмотр изображения">
+    </div>
+
     <script>
       const blocksContainer = document.getElementById('prompt-blocks');
       const addBlockButton = document.getElementById('add-block');
+      const progressBar = document.getElementById('progress-bar');
+      const progressTotal = document.getElementById('progress-total');
+      const progressCompleted = document.getElementById('progress-completed');
+      const progressActive = document.getElementById('progress-active');
+      const generateForm = document.querySelector('form[action="{{ url_for('generate') }}"]');
+      const formLiveStatus = document.getElementById('form-live-status');
+      const lightbox = document.getElementById('lightbox');
+      const lightboxImage = document.getElementById('lightbox-image');
+      const lightboxClose = lightbox?.querySelector('.close');
 
       addBlockButton.addEventListener('click', () => {
         const index = blocksContainer.querySelectorAll('.block-field').length + 1;
@@ -557,6 +632,139 @@
       if (showAllButton) {
         showAllButton.addEventListener('click', () => setActiveGeneration(null));
       }
+
+      const setProgress = (progress) => {
+        if (!progress || !progressTotal || !progressCompleted || !progressBar || !progressActive) return;
+        progressTotal.textContent = progress.total ?? 0;
+        progressCompleted.textContent = progress.completed ?? 0;
+        const percent = progress.total ? Math.floor((progress.completed / progress.total) * 100) : 0;
+        progressBar.style.width = `${percent}%`;
+
+        const isBusy = (progress.active ?? 0) > 0;
+        progressActive.textContent = isBusy ? `В работе: ${progress.active}` : 'Очередь свободна';
+        progressActive.className = `badge ${isBusy ? 'generating' : 'ready'}`;
+      };
+
+      const updateImageCard = (card, image, statusLabels) => {
+        const statusChip = card.querySelector('[data-image-status]');
+        if (statusChip) {
+          statusChip.textContent = statusLabels[image.status] || image.status;
+        }
+
+        const approvedChip = card.querySelector('[data-image-approved]');
+        if (image.approved && !approvedChip) {
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.dataset.imageApproved = '';
+          chip.textContent = '★ понравилось';
+          card.querySelector('.chip-row')?.appendChild(chip);
+        } else if (!image.approved && approvedChip) {
+          approvedChip.remove();
+        }
+
+        const visual = card.querySelector('[data-image-visual]');
+        if (visual) {
+          if (image.exists && image.asset_url) {
+            let img = visual.querySelector('img');
+            if (!img) {
+              img = document.createElement('img');
+              img.dataset.previewImg = '';
+              img.alt = 'Результат листа';
+              visual.innerHTML = '';
+              visual.appendChild(img);
+            }
+            img.src = image.asset_url;
+            if (!img.dataset.previewBound) {
+              img.dataset.previewBound = 'true';
+              img.addEventListener('click', () => {
+                if (!lightbox || !lightboxImage) return;
+                lightboxImage.src = img.src;
+                lightbox.classList.add('visible');
+              });
+            }
+          }
+        }
+      };
+
+      const setGenerationProgress = (genId, ready, total) => {
+        const progressNote = document.querySelector(`[data-gen-progress="${genId}"]`);
+        if (progressNote) {
+          progressNote.querySelector('[data-ready-count]').textContent = ready;
+          if (total !== undefined) {
+            progressNote.innerHTML = `📥 Загружено <strong data-ready-count>${ready}</strong> / ${total} изображений.`;
+          }
+        }
+      };
+
+      const updateGenerationCard = (gen, statusLabels) => {
+        const card = document.querySelector(`[data-gen-card="${gen.id}"]`);
+        if (!card) return;
+
+        const badge = card.querySelector('[data-status-badge]');
+        if (badge) {
+          badge.textContent = gen.status_label;
+          badge.className = `badge ${gen.status}`;
+        }
+
+        setGenerationProgress(gen.id, gen.ready, gen.total);
+
+        if (Array.isArray(gen.images)) {
+          gen.images.forEach((image) => {
+            const imageCard = card.querySelector(`[data-image-card="${image.index}"]`);
+            if (imageCard) {
+              updateImageCard(imageCard, image, statusLabels);
+            }
+          });
+        }
+      };
+
+      const fetchStatus = async () => {
+        try {
+          const response = await fetch('/status', { cache: 'no-store' });
+          if (!response.ok) return;
+          const data = await response.json();
+          setProgress(data.progress);
+          if (Array.isArray(data.generations)) {
+            data.generations.forEach((gen) => updateGenerationCard(gen, {{ STATUS_LABELS | tojson }}));
+          }
+        } catch (error) {
+          console.error('Не удалось обновить статус генерации', error);
+        }
+      };
+
+      const startPolling = () => {
+        fetchStatus();
+        setInterval(fetchStatus, 4000);
+      };
+
+      const attachPreviewHandlers = () => {
+        document.querySelectorAll('[data-preview-img]').forEach((img) => {
+          img.addEventListener('click', () => {
+            if (!lightbox || !lightboxImage) return;
+            lightboxImage.src = img.src;
+            lightbox.classList.add('visible');
+          });
+        });
+      };
+
+      attachPreviewHandlers();
+
+      if (lightbox && lightboxClose) {
+        lightbox.addEventListener('click', (event) => {
+          if (event.target === lightbox || event.target === lightboxClose) {
+            lightbox.classList.remove('visible');
+          }
+        });
+      }
+
+      if (generateForm && formLiveStatus) {
+        generateForm.addEventListener('submit', () => {
+          formLiveStatus.style.display = 'inline-flex';
+          formLiveStatus.innerHTML = '<span class="live-dot"></span> Генерация запущена, ждём новые изображения...';
+        });
+      }
+
+      startPolling();
     </script>
   </body>
 </html>
