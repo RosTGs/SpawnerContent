@@ -27,6 +27,15 @@ from .storage import (
 
 ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
 RESOLUTIONS = ["1K", "2K", "4K"]
+SECRET_STYLE_PROMPT = (
+    "Собирай итоговый лист из отдельных карточек, которые выглядят единым оформленным коллажем. "
+    "Фон в каждой карточке одинаковый: мягкая тёплая бумага со светлой фактурой без отвлекающих узоров. "
+    "Все подписи и цифры делай одним чистым гротескным шрифтом с тонкой аккуратной обводкой и одинаковыми отступами. "
+    "Главный персонаж всегда узнаётся: сохраняй фирменные цвета, причёску и ключевые аксессуары, но меняй позы, эмоции и ракурс, "
+    "допускай разные техники рисования в пределах общего стиля. "
+    "Карточки выравниваются по единому макету с одинаковыми полями и рамками; фон и типографика не меняются между сценами. "
+    "Располагай героя так, чтобы он естественно вписывался в сетку листа и не повторялся один-в-один между кадрами."
+)
 STATUS_LABELS = {
     "pending": "В очереди",
     "generating": "Генерируется",
@@ -155,8 +164,9 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
     try:
         client = GeminiClient(api_key=api_key)
         target_path = str(new_asset_path(f"generation-{entry.id}"))
+        full_prompt = _build_generation_prompt(entry.prompt)
         result = client.generate_image(
-            prompt=entry.prompt,
+            prompt=full_prompt,
             aspect_ratio=entry.aspect_ratio,
             resolution=entry.resolution,
             template_files=[],
@@ -168,7 +178,7 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
         save_metadata(
             SheetRecord(
                 name=f"Generation {entry.id}",
-                prompt=entry.prompt,
+                prompt=full_prompt,
                 aspect_ratio=entry.aspect_ratio,
                 resolution=entry.resolution,
                 template_files={},
@@ -183,6 +193,12 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
 
 
 app = create_app()
+
+
+def _build_generation_prompt(user_prompt: str) -> str:
+    """Attach hidden style prompt to keep a consistent visual collection."""
+
+    return f"{user_prompt}\n\n{SECRET_STYLE_PROMPT}"
 
 
 if __name__ == "__main__":
