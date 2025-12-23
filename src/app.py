@@ -19,10 +19,13 @@ from flask import (
 from .gemini_client import GeminiClient
 from .storage import (
     DEFAULT_OUTPUT_DIR,
+    Settings,
     SheetRecord,
     ensure_output_dir,
     new_asset_path,
     save_metadata,
+    load_settings,
+    save_settings,
     save_uploaded_file,
 )
 
@@ -59,28 +62,51 @@ class GenerationEntry:
     """Represents a single generation request and its results."""
 
     id: int
-    blocks: List[str]
+    sheet_prompts: List[str]
     aspect_ratio: str
     resolution: str
     latest_image: Optional[str] = None
-    reference_files: List[str] = field(default_factory=list)
+    background_references: List[str] = field(default_factory=list)
+    detail_references: List[str] = field(default_factory=list)
     text_parts: List[str] = field(default_factory=list)
     status: str = "pending"
     approved: bool = False
 
     @property
     def prompt(self) -> str:
-        return "\n\n".join(self.blocks)
+        numbered = [f"Промт листа {idx + 1}: {text}" for idx, text in enumerate(self.sheet_prompts)]
+        return "\n\n".join(numbered)
+
+    @property
+    def all_references(self) -> List[str]:
+        return [*self.background_references, *self.detail_references]
+
+    @property
+    def image_path(self) -> Optional[Path]:
+        if not self.latest_image:
+            return None
+        path = Path(self.latest_image)
+        if path.exists() or path.is_absolute():
+            return path
+        fallback = DEFAULT_OUTPUT_DIR / path.name
+        return fallback
 
     @property
     def image_filename(self) -> Optional[str]:
-        if not self.latest_image:
+        path = self.image_path
+        if not path:
             return None
-        return Path(self.latest_image).name
+        return path.name
+
+    @property
+    def image_exists(self) -> bool:
+        path = self.image_path
+        return bool(path and path.exists())
 
 
 _generations: List[GenerationEntry] = []
 _next_generation_id = 1
+_settings: Settings = load_settings()
 
 
 def create_app() -> Flask:
@@ -97,38 +123,63 @@ def create_app() -> Flask:
 
     @app.route("/")
     def index() -> str:
+        progress = {
+            "total": len(_generations),
+            "completed": len(
+                [
+                    gen
+                    for gen in _generations
+                    if gen.status in {"ready", "approved"}
+                ]
+            ),
+            "active": len(
+                [
+                    gen
+                    for gen in _generations
+                    if gen.status in {"generating", "regenerating"}
+                ]
+            ),
+        }
+
         return render_template(
-            "index.html",
-            generations=_generations,
+            "index.html", generations=_generations, progress=progress, settings=_settings
         )
 
     @app.post("/generate")
     def generate() -> str:
-        api_key = request.form.get("api_key") or None
+        api_key = request.form.get("api_key") or _settings.api_key or None
         aspect_ratio = request.form.get("aspect_ratio", ASPECT_RATIOS[0])
         resolution = request.form.get("resolution", RESOLUTIONS[0])
-        blocks = [block.strip() for block in request.form.getlist("prompt_blocks") if block.strip()]
+        sheet_prompts = [block.strip() for block in request.form.getlist("sheet_prompts") if block.strip()]
 
-        if not blocks:
-            flash("Добавьте хотя бы один блок с текстом для генерации.", "error")
+        if not sheet_prompts:
+            flash("Добавьте хотя бы один промт листа для генерации.", "error")
             return redirect(url_for("index"))
 
-        reference_files = _save_reference_uploads(
-            request.files.getlist("reference_images"), generation_id=_next_generation_id
+        background_refs = _save_reference_uploads(
+            request.files.getlist("background_references"),
+            generation_id=_next_generation_id,
+            prefix="bg",
+        )
+        detail_refs = _save_reference_uploads(
+            request.files.getlist("detail_references"),
+            generation_id=_next_generation_id,
+            prefix="detail",
         )
 
         entry = _register_generation(
-            blocks=blocks,
+            sheet_prompts=sheet_prompts,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
-            reference_files=reference_files,
+            background_references=background_refs,
+            detail_references=detail_refs,
         )
         _run_generation(entry, api_key)
         return redirect(url_for("index"))
 
     @app.post("/regenerate/<int:generation_id>")
     def regenerate(generation_id: int) -> str:
-        api_key = request.form.get("api_key") or None
+        api_key = request.form.get("api_key") or _settings.api_key or None
         entry = _find_generation(generation_id)
         if not entry:
             flash("Не удалось найти указанную генерацию.", "error")
@@ -136,6 +187,15 @@ def create_app() -> Flask:
         entry.approved = False
         entry.status = "regenerating"
         _run_generation(entry, api_key)
+        return redirect(url_for("index"))
+
+    @app.post("/settings")
+    def update_settings() -> str:
+        api_key = (request.form.get("saved_api_key") or "").strip()
+        global _settings
+        _settings = Settings(api_key=api_key)
+        save_settings(_settings)
+        flash("Настройки сохранены и будут использоваться по умолчанию.", "success")
         return redirect(url_for("index"))
 
     @app.post("/approve/<int:generation_id>")
@@ -166,18 +226,20 @@ def _find_generation(generation_id: int) -> Optional[GenerationEntry]:
 
 def _register_generation(
     *,
-    blocks: List[str],
+    sheet_prompts: List[str],
     aspect_ratio: str,
     resolution: str,
-    reference_files: Optional[List[str]] = None,
+    background_references: Optional[List[str]] = None,
+    detail_references: Optional[List[str]] = None,
 ) -> GenerationEntry:
     global _next_generation_id
     entry = GenerationEntry(
         id=_next_generation_id,
-        blocks=blocks,
+        sheet_prompts=sheet_prompts,
         aspect_ratio=aspect_ratio,
         resolution=resolution,
-        reference_files=reference_files or [],
+        background_references=background_references or [],
+        detail_references=detail_references or [],
         status="generating",
     )
     _next_generation_id += 1
@@ -194,7 +256,7 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
             prompt=full_prompt,
             aspect_ratio=entry.aspect_ratio,
             resolution=entry.resolution,
-            template_files=entry.reference_files,
+            template_files=entry.all_references,
             output_path=target_path,
         )
         entry.latest_image = result.image_path
@@ -206,7 +268,10 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
                 prompt=full_prompt,
                 aspect_ratio=entry.aspect_ratio,
                 resolution=entry.resolution,
-                template_files={"reference_images": entry.reference_files},
+                template_files={
+                    "background_references": entry.background_references,
+                    "detail_references": entry.detail_references,
+                },
                 latest_image=result.image_path,
                 text_parts=result.text_parts,
             )
@@ -226,12 +291,12 @@ def _build_generation_prompt(user_prompt: str) -> str:
     return f"{user_prompt}\n\n{SECRET_STYLE_PROMPT}"
 
 
-def _save_reference_uploads(files, *, generation_id: int) -> List[str]:
+def _save_reference_uploads(files, *, generation_id: int, prefix: str) -> List[str]:
     saved: List[str] = []
     for upload in files:
         if not upload or not upload.filename:
             continue
-        saved_path = save_uploaded_file(upload, prefix=f"gen-{generation_id}-ref")
+        saved_path = save_uploaded_file(upload, prefix=f"gen-{generation_id}-{prefix}")
         saved.append(str(saved_path))
     return saved
 

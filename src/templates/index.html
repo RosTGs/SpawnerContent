@@ -106,22 +106,24 @@
       .badge.generating { background: #e0f2fe; color: #075985; }
       .badge.regenerating { background: #ede9fe; color: #5b21b6; }
       .badge.approved { background: #fef9c3; color: #92400e; }
-      .prompt-block {
+      .sheet-prompt {
         background: #f8fafc;
         border-radius: 10px;
         padding: 12px;
         border: 1px dashed #e2e8f0;
       }
-      .prompt-block h4 {
+      .sheet-prompt h4 {
         margin: 0 0 6px;
         font-size: 14px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
         color: #475569;
       }
-      .prompt-block p {
+      .sheet-prompt p {
         margin: 0;
+        color: #0f172a;
         white-space: pre-wrap;
+        line-height: 1.5;
       }
       .preview img {
         width: 100%;
@@ -166,11 +168,37 @@
       }
       .flash.success { background: #dcfce7; color: #166534; }
       .flash.error { background: #fee2e2; color: #991b1b; }
+      .progress {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .progress-bar {
+        width: 100%;
+        height: 10px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+      }
+      .progress-bar span {
+        display: block;
+        height: 100%;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+      }
+      .status-note {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        background: #f8fafc;
+        color: #0f172a;
+      }
     </style>
   </head>
   <body>
     <h1>Генерации Gemini</h1>
-    <p class="subtitle">Разбейте промт на блоки, запускайте несколько генераций и отмечайте лучшие.</p>
+    <p class="subtitle">Разбейте промт на листы, запускайте несколько генераций и отмечайте лучшие.</p>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -182,11 +210,51 @@
       {% endif %}
     {% endwith %}
 
+    {% if progress.total %}
+      <div class="card" style="margin-bottom: 12px;">
+        <div class="progress">
+          <div class="header-actions">
+            <div>
+              <div style="font-weight: 700; font-size: 16px;">Прогресс генераций</div>
+              <p style="margin: 4px 0 0; color: #475569;">Готово {{ progress.completed }} из {{ progress.total }} изображений.</p>
+            </div>
+            {% if progress.active %}
+              <span class="badge generating">В работе: {{ progress.active }}</span>
+            {% else %}
+              <span class="badge ready">Очередь свободна</span>
+            {% endif %}
+          </div>
+          <div class="progress-bar">
+            {% set percent = (progress.completed / progress.total * 100) | round(0, 'floor') if progress.total else 0 %}
+            <span style="width: {{ percent }}%;"></span>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    <form class="card" method="post" action="{{ url_for('update_settings') }}">
+      <div class="header-actions">
+        <div>
+          <h2 style="margin: 0 0 6px;">Настройки</h2>
+          <p style="margin: 0; color: #475569;">API ключ сохраняется и подставляется по умолчанию во все генерации.</p>
+        </div>
+        <button class="button secondary" type="submit">Сохранить настройки</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="saved_api_key">Gemini API key</label>
+          <input id="saved_api_key" name="saved_api_key" type="password" placeholder="Сохранённый GEMINI_API_KEY" value="{{ settings.api_key }}">
+          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Используется по умолчанию, если поле в форме генерации пустое.</p>
+        </div>
+      </div>
+    </form>
+
     <form class="card" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data">
       <div class="header-actions">
         <div>
           <h2 style="margin: 0 0 6px;">Новая генерация</h2>
-          <p style="margin: 0; color: #475569;">API ключ не сохраняется на сервере — он нужен только для текущего запроса.</p>
+          <p style="margin: 0; color: #475569;">Если оставить поле пустым, подставится сохранённый в настройках API ключ.</p>
         </div>
         <button class="button" type="submit">Запустить генерацию</button>
       </div>
@@ -194,7 +262,7 @@
       <div class="row">
         <div>
           <label for="api_key">Gemini API key</label>
-          <input id="api_key" name="api_key" type="password" placeholder="GEMINI_API_KEY (опционально)">
+          <input id="api_key" name="api_key" type="password" placeholder="GEMINI_API_KEY (опционально)" value="{{ settings.api_key }}">
         </div>
         <div>
           <label for="aspect_ratio">Соотношение сторон</label>
@@ -216,24 +284,29 @@
 
       <div class="row">
         <div>
-          <label for="reference_images">Общие референсы (фон/цвет/стиль)</label>
-          <input id="reference_images" name="reference_images" type="file" accept="image/*" multiple>
-          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Эти картинки отправятся вместе с промтом и применятся ко всем блокам.</p>
+          <label for="background_references">Референсы фона</label>
+          <input id="background_references" name="background_references" type="file" accept="image/*" multiple>
+          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Фоновые или цветовые подсказки, которые применятся ко всем листам.</p>
+        </div>
+        <div>
+          <label for="detail_references">Референсы контента</label>
+          <input id="detail_references" name="detail_references" type="file" accept="image/*" multiple>
+          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Отдельные элементы или стиль для героев и объектов.</p>
         </div>
       </div>
 
       <div id="prompt-blocks" class="grid">
         <div class="block-field">
-          <label>Блок 1</label>
-          <textarea name="prompt_blocks" rows="3" placeholder="Например: общий сеттинг сцены"></textarea>
+          <label>Промт листа 1</label>
+          <textarea name="sheet_prompts" rows="3" placeholder="Например: общий сеттинг сцены"></textarea>
         </div>
         <div class="block-field">
-          <label>Блок 2</label>
-          <textarea name="prompt_blocks" rows="3" placeholder="Детали персонажей, света или атмосферы"></textarea>
+          <label>Промт листа 2</label>
+          <textarea name="sheet_prompts" rows="3" placeholder="Детали персонажей, света или атмосферы"></textarea>
         </div>
       </div>
       <div style="margin-top: 12px;">
-        <button id="add-block" class="button secondary" type="button">+ Добавить блок</button>
+        <button id="add-block" class="button secondary" type="button">+ Добавить лист</button>
       </div>
     </form>
 
@@ -254,19 +327,38 @@
               <span class="badge {{ gen.status }}">{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
             </div>
 
+            {% if gen.status in ['generating', 'regenerating'] %}
+              <div class="status-note" style="margin-top: 8px;">
+                🔄 Генерация продолжается — дождитесь завершения, чтобы не запускать лишние запросы.
+              </div>
+            {% endif %}
+
             <div class="grid" style="margin-top: 8px;">
               <div>
-                {% for block in gen.blocks %}
-                  <div class="prompt-block">
-                    <h4>Блок {{ loop.index }}</h4>
-                    <p>{{ block }}</p>
+                {% for prompt in gen.sheet_prompts %}
+                  <div class="sheet-prompt">
+                    <h4>Промт листа {{ loop.index }}</h4>
+                    <p>{{ prompt }}</p>
                   </div>
                 {% endfor %}
-                {% if gen.reference_files %}
+                {% if gen.background_references %}
                   <div style="margin-top: 12px;">
-                    <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы</h4>
+                    <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы фона</h4>
                     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                      {% for ref in gen.reference_files %}
+                      {% for ref in gen.background_references %}
+                        {% set filename = ref.rsplit('/', 1)[-1] %}
+                        <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
+                          📎 {{ filename }}
+                        </a>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
+                {% if gen.detail_references %}
+                  <div style="margin-top: 12px;">
+                    <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы контента</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                      {% for ref in gen.detail_references %}
                         {% set filename = ref.rsplit('/', 1)[-1] %}
                         <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
                           📎 {{ filename }}
@@ -287,8 +379,10 @@
                 {% endif %}
               </div>
               <div class="preview">
-                {% if gen.image_filename %}
+                {% if gen.image_exists %}
                   <img src="{{ url_for('serve_asset', filename=gen.image_filename) }}" alt="Результат генерации">
+                {% elif gen.image_filename %}
+                  <div class="placeholder">Файл {{ gen.image_filename }} не найден. Проверьте путь и перезапустите генерацию.</div>
                 {% else %}
                   <div class="placeholder">Изображение появится после генерации.</div>
                 {% endif %}
@@ -300,7 +394,7 @@
                 <button class="button" type="submit" {% if gen.approved %}disabled{% endif %}>👍 Апрув</button>
               </form>
               <form method="post" action="{{ url_for('regenerate', generation_id=gen.id) }}" style="display: flex; gap: 8px; align-items: center;">
-                <input name="api_key" type="password" placeholder="API key (опционально)" style="width: 220px;">
+                <input name="api_key" type="password" placeholder="API key (опционально)" value="{{ settings.api_key }}" style="width: 220px;">
                 <button class="button secondary" type="submit">↻ Регенерировать</button>
               </form>
             </div>
@@ -320,8 +414,8 @@
         const wrapper = document.createElement('div');
         wrapper.className = 'block-field';
         wrapper.innerHTML = `
-          <label>Блок ${index}</label>
-          <textarea name="prompt_blocks" rows="3" placeholder="Дополнительные детали"></textarea>
+          <label>Промт листа ${index}</label>
+          <textarea name="sheet_prompts" rows="3" placeholder="Дополнительные детали листа"></textarea>
         `;
         blocksContainer.appendChild(wrapper);
       });

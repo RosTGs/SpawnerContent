@@ -15,6 +15,7 @@ from PIL import Image
 
 DEFAULT_OUTPUT_DIR = Path("output")
 DEFAULT_DESKTOP_PDF = Path.home() / "Desktop" / "gemini_output.pdf"
+SETTINGS_FILE = DEFAULT_OUTPUT_DIR / "settings.json"
 
 
 @dataclass
@@ -23,12 +24,19 @@ class SheetRecord:
     prompt: str = ""
     aspect_ratio: str = "1:1"
     resolution: str = "1K"
-    template_files: Dict[str, Optional[str]] = field(default_factory=dict)
+    template_files: Dict[str, object] = field(default_factory=dict)
     latest_image: Optional[str] = None
     text_parts: List[str] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2)
+
+
+@dataclass
+class Settings:
+    """Persisted user preferences for the application."""
+
+    api_key: str = ""
 
 
 def ensure_output_dir(root: Path = DEFAULT_OUTPUT_DIR) -> Path:
@@ -48,6 +56,24 @@ def save_metadata(sheet: SheetRecord, root: Path = DEFAULT_OUTPUT_DIR) -> Path:
     sanitized = sheet.name.replace(" ", "_")
     path = root / f"{sanitized}-{timestamp}.json"
     path.write_text(sheet.to_json(), encoding="utf-8")
+    return path
+
+
+def load_settings(path: Path = SETTINGS_FILE) -> Settings:
+    """Load persisted settings from disk."""
+
+    ensure_output_dir(path.parent)
+    if not path.exists():
+        return Settings()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return Settings(api_key=raw.get("api_key", ""))
+
+
+def save_settings(settings: Settings, path: Path = SETTINGS_FILE) -> Path:
+    """Persist current settings to disk."""
+
+    ensure_output_dir(path.parent)
+    path.write_text(json.dumps(asdict(settings), ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
 
