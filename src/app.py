@@ -22,6 +22,7 @@ from .storage import (
     Settings,
     SheetRecord,
     ensure_output_dir,
+    export_pdf,
     new_asset_path,
     save_metadata,
     load_settings,
@@ -66,7 +67,9 @@ class GenerationEntry:
     aspect_ratio: str
     resolution: str
     latest_image: Optional[str] = None
-    image_paths: List[str] = field(default_factory=list)
+    image_paths: List[Optional[str]] = field(default_factory=list)
+    image_statuses: List[str] = field(default_factory=list)
+    image_approvals: List[bool] = field(default_factory=list)
     background_references: List[str] = field(default_factory=list)
     detail_references: List[str] = field(default_factory=list)
     text_parts: List[str] = field(default_factory=list)
@@ -107,26 +110,56 @@ class GenerationEntry:
 
     @property
     def images(self) -> List[dict[str, object]]:
-        paths = self.image_paths or ([self.latest_image] if self.latest_image else [])
         images: List[dict[str, object]] = []
-        for raw_path in paths:
-            if not raw_path:
-                continue
-            normalized = self._normalize_image_path(raw_path)
+        total = max(len(self.sheet_prompts), len(self.image_paths))
+        for index in range(total):
+            raw_path = self.image_paths[index] if index < len(self.image_paths) else None
+            normalized = self._normalize_image_path(raw_path) if raw_path else None
+            filename = normalized.name if normalized else f"generation-{self.id}-sheet-{index + 1}.png"
+            asset_name = (
+                normalized.relative_to(DEFAULT_OUTPUT_DIR).as_posix()
+                if normalized and DEFAULT_OUTPUT_DIR in normalized.parents
+                else filename
+            )
+            status = self.image_statuses[index] if index < len(self.image_statuses) else self.status
+            approved = self.image_approvals[index] if index < len(self.image_approvals) else False
             images.append(
                 {
-                    "filename": normalized.name,
-                    "exists": normalized.exists(),
+                    "filename": filename,
+                    "asset_name": asset_name,
+                    "exists": normalized.exists() if normalized else False,
+                    "status": status,
+                    "approved": approved,
+                    "index": index,
                 }
             )
         return images
 
+    def recalc_flags(self) -> None:
+        self.approved = bool(self.image_approvals) and all(self.image_approvals)
+        if any(state == "regenerating" for state in self.image_statuses):
+            self.status = "regenerating"
+        elif any(state in {"pending", "generating"} for state in self.image_statuses):
+            self.status = "generating"
+        elif any(state == "error" for state in self.image_statuses):
+            self.status = "error"
+        elif self.approved:
+            self.status = "approved"
+        elif self.image_statuses and all(state == "ready" for state in self.image_statuses):
+            self.status = "ready"
+
     @staticmethod
-    def _normalize_image_path(path_str: str) -> Path:
+    def _normalize_image_path(path_str: Optional[str]) -> Path:
+        if not path_str:
+            return DEFAULT_OUTPUT_DIR / "placeholder.png"
         path = Path(path_str)
-        if path.exists() or path.is_absolute():
+        if path.is_absolute() and path.exists():
             return path
-        return DEFAULT_OUTPUT_DIR / path.name
+        if path.is_absolute() and not path.exists() and path.name:
+            return DEFAULT_OUTPUT_DIR / path.name
+        if not path.is_absolute():
+            return DEFAULT_OUTPUT_DIR / path.name
+        return DEFAULT_OUTPUT_DIR / "placeholder.png"
 
 
 _generations: List[GenerationEntry] = []
@@ -202,16 +235,20 @@ def create_app() -> Flask:
         _run_generation(entry, api_key)
         return redirect(url_for("index"))
 
-    @app.post("/regenerate/<int:generation_id>")
-    def regenerate(generation_id: int) -> str:
+    @app.post("/regenerate/<int:generation_id>/image/<int:image_index>")
+    def regenerate_image(generation_id: int, image_index: int) -> str:
         api_key = request.form.get("api_key") or _settings.api_key or None
         entry = _find_generation(generation_id)
         if not entry:
             flash("Не удалось найти указанную генерацию.", "error")
             return redirect(url_for("index"))
-        entry.approved = False
-        entry.status = "regenerating"
-        _run_generation(entry, api_key)
+        _ensure_image_lists(entry)
+        if image_index < 0 or image_index >= len(entry.sheet_prompts):
+            flash("Некорректный номер изображения для регенерации.", "error")
+            return redirect(url_for("index"))
+        entry.image_approvals[image_index] = False
+        entry.image_statuses[image_index] = "regenerating"
+        _run_generation(entry, api_key, target_index=image_index)
         return redirect(url_for("index"))
 
     @app.post("/settings")
@@ -223,16 +260,43 @@ def create_app() -> Flask:
         flash("Настройки сохранены и будут использоваться по умолчанию.", "success")
         return redirect(url_for("index"))
 
-    @app.post("/approve/<int:generation_id>")
-    def approve(generation_id: int) -> str:
+    @app.post("/approve/<int:generation_id>/image/<int:image_index>")
+    def approve_image(generation_id: int, image_index: int) -> str:
         entry = _find_generation(generation_id)
         if not entry:
             flash("Не удалось найти указанную генерацию.", "error")
         else:
-            entry.approved = True
-            entry.status = "approved"
-            flash("Визуализация отмечена как понравившаяся.", "success")
+            _ensure_image_lists(entry)
+            if image_index < 0 or image_index >= len(entry.sheet_prompts):
+                flash("Некорректный номер изображения для апрува.", "error")
+            else:
+                entry.image_approvals[image_index] = True
+                entry.recalc_flags()
+                flash("Изображение отмечено как понравившееся.", "success")
         return redirect(url_for("index"))
+
+    @app.post("/export_pdf/<int:generation_id>")
+    def export_pdf_route(generation_id: int):
+        entry = _find_generation(generation_id)
+        if not entry:
+            flash("Не удалось найти указанную генерацию.", "error")
+            return redirect(url_for("index"))
+
+        _ensure_image_lists(entry)
+        if not entry.approved:
+            flash("Нужно апрувнуть все изображения, чтобы создать PDF.", "error")
+            return redirect(url_for("index"))
+
+        valid_paths = [path for path in entry.image_paths if path]
+        if not valid_paths:
+            flash("Нет изображений для формирования PDF.", "error")
+            return redirect(url_for("index"))
+
+        destination = DEFAULT_OUTPUT_DIR / f"generation-{entry.id}.pdf"
+        pdf_path = export_pdf(valid_paths, destination)
+        return send_from_directory(
+            pdf_path.parent, pdf_path.name, as_attachment=True, download_name=pdf_path.name
+        )
 
     @app.route("/assets/<path:filename>")
     def serve_asset(filename: str):  # type: ignore[override]
@@ -247,6 +311,16 @@ def _find_generation(generation_id: int) -> Optional[GenerationEntry]:
         if entry.id == generation_id:
             return entry
     return None
+
+
+def _ensure_image_lists(entry: GenerationEntry) -> None:
+    expected = len(entry.sheet_prompts)
+    if len(entry.image_paths) < expected:
+        entry.image_paths.extend([None] * (expected - len(entry.image_paths)))
+    if len(entry.image_statuses) < expected:
+        entry.image_statuses.extend(["pending"] * (expected - len(entry.image_statuses)))
+    if len(entry.image_approvals) < expected:
+        entry.image_approvals.extend([False] * (expected - len(entry.image_approvals)))
 
 
 def _register_generation(
@@ -266,22 +340,42 @@ def _register_generation(
         background_references=background_references or [],
         detail_references=detail_references or [],
         status="generating",
+        image_paths=[None] * len(sheet_prompts),
+        image_statuses=["generating"] * len(sheet_prompts),
+        image_approvals=[False] * len(sheet_prompts),
     )
     _next_generation_id += 1
     _generations.insert(0, entry)
     return entry
 
 
-def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
+def _run_generation(
+    entry: GenerationEntry, api_key: Optional[str], *, target_index: Optional[int] = None
+) -> None:
     try:
         client = GeminiClient(api_key=api_key)
         generated_images: List[str] = []
         collected_text_parts: List[str] = []
         combined_prompts: List[str] = []
 
-        for index, sheet_prompt in enumerate(entry.sheet_prompts, start=1):
-            target_path = str(new_asset_path(f"generation-{entry.id}-sheet-{index}"))
-            full_prompt = _build_generation_prompt(f"Промт листа {index}: {sheet_prompt}")
+        _ensure_image_lists(entry)
+
+        target_indices = (
+            range(1, len(entry.sheet_prompts) + 1)
+            if target_index is None
+            else [target_index + 1]
+        )
+
+        for displayed_index in target_indices:
+            prompt_index = displayed_index - 1
+            sheet_prompt = entry.sheet_prompts[prompt_index]
+            target_path = str(new_asset_path(f"generation-{entry.id}-sheet-{displayed_index}"))
+            full_prompt = _build_generation_prompt(
+                f"Промт листа {displayed_index}: {sheet_prompt}"
+            )
+            entry.image_statuses[prompt_index] = (
+                "regenerating" if target_index is not None else "generating"
+            )
             result = client.generate_image(
                 prompt=full_prompt,
                 aspect_ratio=entry.aspect_ratio,
@@ -289,14 +383,22 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
                 template_files=entry.all_references,
                 output_path=target_path,
             )
+            entry.image_paths[prompt_index] = result.image_path
+            entry.image_statuses[prompt_index] = "ready"
+            entry.image_approvals[prompt_index] = False
+            entry.latest_image = result.image_path
+
             generated_images.append(result.image_path)
             collected_text_parts.extend(result.text_parts)
             combined_prompts.append(full_prompt)
 
-        entry.latest_image = generated_images[-1] if generated_images else None
-        entry.image_paths = generated_images
-        entry.text_parts = collected_text_parts
-        entry.status = "ready"
+        if target_index is None:
+            entry.image_paths = generated_images
+            entry.text_parts = collected_text_parts
+        elif collected_text_parts:
+            entry.text_parts = [*entry.text_parts, *collected_text_parts]
+
+        entry.recalc_flags()
         save_metadata(
             SheetRecord(
                 name=f"Generation {entry.id}",
@@ -314,7 +416,11 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
         )
         flash("Изображение готово и добавлено в список.", "success")
     except Exception as exc:  # noqa: BLE001
-        entry.status = "error"
+        if target_index is None:
+            entry.image_statuses = ["error"] * len(entry.sheet_prompts)
+        else:
+            entry.image_statuses[target_index] = "error"
+        entry.recalc_flags()
         flash(f"Ошибка при генерации: {exc}", "error")
 
 
