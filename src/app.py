@@ -209,5 +209,35 @@ def _build_generation_prompt(user_prompt: str) -> str:
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "5000"))
+    def _first_available_port() -> int:
+        import socket
+
+        raw_ports = os.getenv("PORT")
+        candidates: list[int] = []
+
+        if raw_ports:
+            for raw in raw_ports.split(","):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    candidates.append(int(raw))
+                except ValueError:
+                    continue
+        else:
+            candidates = [5000, 5001, 5002]
+
+        for candidate in candidates:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.bind(("", candidate))
+                    return candidate
+            except OSError:
+                continue
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("", 0))
+            return sock.getsockname()[1]
+
+    port = _first_available_port()
     app.run(host="0.0.0.0", port=port, debug=True)
