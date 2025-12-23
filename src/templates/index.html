@@ -375,7 +375,7 @@
           <h2 style="margin: 0 0 6px;">Новая генерация</h2>
           <p style="margin: 0; color: #475569;">Если оставить поле пустым, подставится сохранённый в настройках API ключ.</p>
         </div>
-        <button class="button" type="submit">Запустить генерацию</button>
+        <button class="button" type="submit" id="start-generation" {% if progress.active %}disabled{% endif %}>Запустить генерацию</button>
       </div>
       <div id="form-live-status" class="status-note" style="display: none; margin: 8px 0 0;">
         ⏳ Генерация запущена. Страница автоматически обновит статус загрузки изображений.
@@ -534,7 +534,7 @@
               {% if images %}
                 <div class="preview-grid">
                   {% for image in images %}
-                    <div class="image-card" data-image-card="{{ image.index }}" data-gen-id="{{ gen.id }}">
+                    <div class="image-card" data-image-card="{{ image.index }}" data-gen-id="{{ gen.id }}" data-image-status="{{ image.status }}" data-image-approved="{{ 'true' if image.approved else 'false' }}">
                       <div class="image-visual" data-image-visual data-image-index="{{ image.index }}">
                         {% if image.exists %}
                           <img data-preview-img src="{{ url_for('serve_asset', filename=image.asset_name) }}" alt="Результат листа {{ loop.index }}">
@@ -548,11 +548,11 @@
                       </div>
                       <div class="actions">
                         <form method="post" action="{{ url_for('approve_image', generation_id=gen.id, image_index=image.index) }}">
-                          <button class="button" type="submit" {% if image.approved or image.status != 'ready' %}disabled{% endif %}>👍 Апрув</button>
+                          <button class="button" type="submit" data-action-approve {% if image.approved or image.status != 'ready' or progress.active %}disabled{% endif %}>👍 Апрув</button>
                         </form>
                         <form method="post" action="{{ url_for('regenerate_image', generation_id=gen.id, image_index=image.index) }}" style="display: flex; gap: 8px; align-items: center;">
                           <input name="api_key" type="password" placeholder="API key (опционально)" value="{{ settings.api_key }}" style="width: 180px;">
-                          <button class="button secondary" type="submit">↻ Регенерировать</button>
+                          <button class="button secondary" type="submit" data-action-regenerate {% if image.status in ['generating', 'regenerating', 'pending'] or progress.active %}disabled{% endif %}>↻ Регенерировать</button>
                         </form>
                       </div>
                     </div>
@@ -585,9 +585,11 @@
       const progressActive = document.getElementById('progress-active');
       const generateForm = document.querySelector('form[action="{{ url_for('generate') }}"]');
       const formLiveStatus = document.getElementById('form-live-status');
+      const startGenerationButton = document.getElementById('start-generation');
       const lightbox = document.getElementById('lightbox');
       const lightboxImage = document.getElementById('lightbox-image');
       const lightboxClose = lightbox?.querySelector('.close');
+      let isQueueBusy = {{ 'true' if progress.active else 'false' }};
 
       addBlockButton.addEventListener('click', () => {
         const index = blocksContainer.querySelectorAll('.block-field').length + 1;
@@ -633,6 +635,38 @@
         showAllButton.addEventListener('click', () => setActiveGeneration(null));
       }
 
+      const syncImageActions = (card, image) => {
+        const approveButton = card.querySelector('[data-action-approve]');
+        if (approveButton) {
+          approveButton.disabled = isQueueBusy || image.approved || image.status !== 'ready';
+        }
+
+        const regenerateButton = card.querySelector('[data-action-regenerate]');
+        if (regenerateButton) {
+          const isImageBusy = ['generating', 'regenerating', 'pending'].includes(image.status);
+          regenerateButton.disabled = isQueueBusy || isImageBusy;
+        }
+      };
+
+      const setQueueBusy = (busy) => {
+        isQueueBusy = busy;
+        if (startGenerationButton) {
+          startGenerationButton.disabled = busy;
+        }
+        document.querySelectorAll('[data-image-card]').forEach((card) => {
+          const status = card.dataset.imageStatus;
+          const approved = card.dataset.imageApproved === 'true';
+          syncImageActions(card, { status, approved });
+        });
+
+        if (formLiveStatus) {
+          formLiveStatus.style.display = busy ? 'inline-flex' : 'none';
+          if (busy) {
+            formLiveStatus.innerHTML = '<span class="live-dot"></span> Генерация запущена, ждём новые изображения...';
+          }
+        }
+      };
+
       const setProgress = (progress) => {
         if (!progress || !progressTotal || !progressCompleted || !progressBar || !progressActive) return;
         progressTotal.textContent = progress.total ?? 0;
@@ -643,6 +677,7 @@
         const isBusy = (progress.active ?? 0) > 0;
         progressActive.textContent = isBusy ? `В работе: ${progress.active}` : 'Очередь свободна';
         progressActive.className = `badge ${isBusy ? 'generating' : 'ready'}`;
+        setQueueBusy(isBusy);
       };
 
       const updateImageCard = (card, image, statusLabels) => {
@@ -650,6 +685,9 @@
         if (statusChip) {
           statusChip.textContent = statusLabels[image.status] || image.status;
         }
+
+        card.dataset.imageStatus = image.status;
+        card.dataset.imageApproved = image.approved ? 'true' : 'false';
 
         const approvedChip = card.querySelector('[data-image-approved]');
         if (image.approved && !approvedChip) {
@@ -684,6 +722,8 @@
             }
           }
         }
+
+        syncImageActions(card, image);
       };
 
       const setGenerationProgress = (genId, ready, total) => {
@@ -749,6 +789,15 @@
 
       attachPreviewHandlers();
 
+      document.querySelectorAll('[data-image-card]').forEach((card) => {
+        syncImageActions(card, {
+          status: card.dataset.imageStatus,
+          approved: card.dataset.imageApproved === 'true',
+        });
+      });
+
+      setQueueBusy(isQueueBusy);
+
       if (lightbox && lightboxClose) {
         lightbox.addEventListener('click', (event) => {
           if (event.target === lightbox || event.target === lightboxClose) {
@@ -759,8 +808,7 @@
 
       if (generateForm && formLiveStatus) {
         generateForm.addEventListener('submit', () => {
-          formLiveStatus.style.display = 'inline-flex';
-          formLiveStatus.innerHTML = '<span class="live-dot"></span> Генерация запущена, ждём новые изображения...';
+          setQueueBusy(true);
         });
       }
 
