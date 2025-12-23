@@ -23,6 +23,7 @@ from .storage import (
     ensure_output_dir,
     new_asset_path,
     save_metadata,
+    save_uploaded_file,
 )
 
 ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
@@ -62,6 +63,7 @@ class GenerationEntry:
     aspect_ratio: str
     resolution: str
     latest_image: Optional[str] = None
+    reference_files: List[str] = field(default_factory=list)
     text_parts: List[str] = field(default_factory=list)
     status: str = "pending"
     approved: bool = False
@@ -111,7 +113,16 @@ def create_app() -> Flask:
             flash("Добавьте хотя бы один блок с текстом для генерации.", "error")
             return redirect(url_for("index"))
 
-        entry = _register_generation(blocks=blocks, aspect_ratio=aspect_ratio, resolution=resolution)
+        reference_files = _save_reference_uploads(
+            request.files.getlist("reference_images"), generation_id=_next_generation_id
+        )
+
+        entry = _register_generation(
+            blocks=blocks,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            reference_files=reference_files,
+        )
         _run_generation(entry, api_key)
         return redirect(url_for("index"))
 
@@ -153,13 +164,20 @@ def _find_generation(generation_id: int) -> Optional[GenerationEntry]:
     return None
 
 
-def _register_generation(*, blocks: List[str], aspect_ratio: str, resolution: str) -> GenerationEntry:
+def _register_generation(
+    *,
+    blocks: List[str],
+    aspect_ratio: str,
+    resolution: str,
+    reference_files: Optional[List[str]] = None,
+) -> GenerationEntry:
     global _next_generation_id
     entry = GenerationEntry(
         id=_next_generation_id,
         blocks=blocks,
         aspect_ratio=aspect_ratio,
         resolution=resolution,
+        reference_files=reference_files or [],
         status="generating",
     )
     _next_generation_id += 1
@@ -176,7 +194,7 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
             prompt=full_prompt,
             aspect_ratio=entry.aspect_ratio,
             resolution=entry.resolution,
-            template_files=[],
+            template_files=entry.reference_files,
             output_path=target_path,
         )
         entry.latest_image = result.image_path
@@ -188,7 +206,7 @@ def _run_generation(entry: GenerationEntry, api_key: Optional[str]) -> None:
                 prompt=full_prompt,
                 aspect_ratio=entry.aspect_ratio,
                 resolution=entry.resolution,
-                template_files={},
+                template_files={"reference_images": entry.reference_files},
                 latest_image=result.image_path,
                 text_parts=result.text_parts,
             )
@@ -206,6 +224,16 @@ def _build_generation_prompt(user_prompt: str) -> str:
     """Attach hidden style prompt to keep a consistent visual collection."""
 
     return f"{user_prompt}\n\n{SECRET_STYLE_PROMPT}"
+
+
+def _save_reference_uploads(files, *, generation_id: int) -> List[str]:
+    saved: List[str] = []
+    for upload in files:
+        if not upload or not upload.filename:
+            continue
+        saved_path = save_uploaded_file(upload, prefix=f"gen-{generation_id}-ref")
+        saved.append(str(saved_path))
+    return saved
 
 
 if __name__ == "__main__":
