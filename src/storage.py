@@ -8,6 +8,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from werkzeug.datastructures import FileStorage
+from werkzeug.utils import secure_filename
+
 from PIL import Image
 
 DEFAULT_OUTPUT_DIR = Path("output")
@@ -45,6 +48,20 @@ def save_metadata(sheet: SheetRecord, root: Path = DEFAULT_OUTPUT_DIR) -> Path:
     sanitized = sheet.name.replace(" ", "_")
     path = root / f"{sanitized}-{timestamp}.json"
     path.write_text(sheet.to_json(), encoding="utf-8")
+    return path
+
+
+def save_uploaded_file(
+    upload: FileStorage, *, prefix: str, root: Path = DEFAULT_OUTPUT_DIR
+) -> Path:
+    """Save a user uploaded file inside the output directory."""
+
+    ensure_output_dir(root)
+    sanitized_prefix = prefix.replace(" ", "_")
+    filename = secure_filename(upload.filename or "uploaded")
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    path = root / f"{sanitized_prefix}-{timestamp}-{filename}"
+    upload.save(path)
     return path
 
 

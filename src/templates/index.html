@@ -182,7 +182,7 @@
       {% endif %}
     {% endwith %}
 
-    <form class="card" method="post" action="{{ url_for('generate') }}">
+    <form class="card" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data">
       <div class="header-actions">
         <div>
           <h2 style="margin: 0 0 6px;">Новая генерация</h2>
@@ -211,6 +211,14 @@
               <option value="{{ res }}">{{ res }}</option>
             {% endfor %}
           </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="reference_images">Общие референсы (фон/цвет/стиль)</label>
+          <input id="reference_images" name="reference_images" type="file" accept="image/*" multiple>
+          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Эти картинки отправятся вместе с промтом и применятся ко всем блокам.</p>
         </div>
       </div>
 
@@ -254,6 +262,19 @@
                     <p>{{ block }}</p>
                   </div>
                 {% endfor %}
+                {% if gen.reference_files %}
+                  <div style="margin-top: 12px;">
+                    <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                      {% for ref in gen.reference_files %}
+                        {% set filename = ref.rsplit('/', 1)[-1] %}
+                        <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
+                          📎 {{ filename }}
+                        </a>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
                 {% if gen.text_parts %}
                   <div style="margin-top: 10px;">
                     <h4 style="margin: 0 0 6px; font-size: 13px;">Текстовые подсказки модели</h4>
