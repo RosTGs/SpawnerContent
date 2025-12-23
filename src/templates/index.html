@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gemini Sheet Builder — Веб</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        background: #f3f4f6;
+      }
+      body {
+        margin: 0;
+        padding: 0 24px 48px;
+        color: #0f172a;
+      }
+      h1 {
+        font-size: 32px;
+        margin: 24px 0 8px;
+      }
+      p.subtitle {
+        margin-top: 0;
+        color: #475569;
+      }
+      .card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+      input[type="text"],
+      input[type="password"],
+      select,
+      textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      textarea {
+        resize: vertical;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px 16px;
+        background: linear-gradient(135deg, #2563eb, #4f46e5);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+      }
+      .button.secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+        box-shadow: none;
+      }
+      .button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #0f172a;
+        background: #e2e8f0;
+      }
+      .badge.success { background: #dcfce7; color: #166534; }
+      .badge.ready { background: #dcfce7; color: #166534; }
+      .badge.error { background: #fee2e2; color: #991b1b; }
+      .badge.generating { background: #e0f2fe; color: #075985; }
+      .badge.regenerating { background: #ede9fe; color: #5b21b6; }
+      .badge.approved { background: #fef9c3; color: #92400e; }
+      .prompt-block {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: 12px;
+        border: 1px dashed #e2e8f0;
+      }
+      .prompt-block h4 {
+        margin: 0 0 6px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #475569;
+      }
+      .prompt-block p {
+        margin: 0;
+        white-space: pre-wrap;
+      }
+      .preview img {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+      }
+      .preview .placeholder {
+        width: 100%;
+        padding: 32px;
+        text-align: center;
+        color: #94a3b8;
+        border-radius: 12px;
+        border: 1px dashed #cbd5e1;
+        background: #f8fafc;
+      }
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0;
+      }
+      .chip {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        font-size: 12px;
+        color: #334155;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 12px;
+      }
+      .flash {
+        padding: 12px 16px;
+        border-radius: 10px;
+        margin: 10px 0;
+        font-weight: 600;
+      }
+      .flash.success { background: #dcfce7; color: #166534; }
+      .flash.error { background: #fee2e2; color: #991b1b; }
+    </style>
+  </head>
+  <body>
+    <h1>Генерации Gemini</h1>
+    <p class="subtitle">Разбейте промт на блоки, запускайте несколько генераций и отмечайте лучшие.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div>
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form class="card" method="post" action="{{ url_for('generate') }}">
+      <div class="header-actions">
+        <div>
+          <h2 style="margin: 0 0 6px;">Новая генерация</h2>
+          <p style="margin: 0; color: #475569;">API ключ не сохраняется на сервере — он нужен только для текущего запроса.</p>
+        </div>
+        <button class="button" type="submit">Запустить генерацию</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="api_key">Gemini API key</label>
+          <input id="api_key" name="api_key" type="password" placeholder="GEMINI_API_KEY (опционально)">
+        </div>
+        <div>
+          <label for="aspect_ratio">Соотношение сторон</label>
+          <select id="aspect_ratio" name="aspect_ratio">
+            {% for ratio in ASPECT_RATIOS %}
+              <option value="{{ ratio }}">{{ ratio }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="resolution">Разрешение</label>
+          <select id="resolution" name="resolution">
+            {% for res in RESOLUTIONS %}
+              <option value="{{ res }}">{{ res }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div id="prompt-blocks" class="grid">
+        <div class="block-field">
+          <label>Блок 1</label>
+          <textarea name="prompt_blocks" rows="3" placeholder="Например: общий сеттинг сцены"></textarea>
+        </div>
+        <div class="block-field">
+          <label>Блок 2</label>
+          <textarea name="prompt_blocks" rows="3" placeholder="Детали персонажей, света или атмосферы"></textarea>
+        </div>
+      </div>
+      <div style="margin-top: 12px;">
+        <button id="add-block" class="button secondary" type="button">+ Добавить блок</button>
+      </div>
+    </form>
+
+    <h2 style="margin: 28px 0 12px;">История генераций</h2>
+    {% if generations %}
+      <div class="grid">
+        {% for gen in generations %}
+          <div class="card">
+            <div class="header-actions">
+              <div>
+                <div style="font-weight: 700; font-size: 16px;">Генерация #{{ gen.id }}</div>
+                <div class="chip-row">
+                  <span class="chip">{{ gen.aspect_ratio }}</span>
+                  <span class="chip">{{ gen.resolution }}</span>
+                  {% if gen.approved %}<span class="chip">★ понравилось</span>{% endif %}
+                </div>
+              </div>
+              <span class="badge {{ gen.status }}">{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
+            </div>
+
+            <div class="grid" style="margin-top: 8px;">
+              <div>
+                {% for block in gen.blocks %}
+                  <div class="prompt-block">
+                    <h4>Блок {{ loop.index }}</h4>
+                    <p>{{ block }}</p>
+                  </div>
+                {% endfor %}
+                {% if gen.text_parts %}
+                  <div style="margin-top: 10px;">
+                    <h4 style="margin: 0 0 6px; font-size: 13px;">Текстовые подсказки модели</h4>
+                    <ul style="margin: 0 0 4px 18px; color: #475569;">
+                      {% for text in gen.text_parts %}
+                        <li>{{ text }}</li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                {% endif %}
+              </div>
+              <div class="preview">
+                {% if gen.image_filename %}
+                  <img src="{{ url_for('serve_asset', filename=gen.image_filename) }}" alt="Результат генерации">
+                {% else %}
+                  <div class="placeholder">Изображение появится после генерации.</div>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="actions">
+              <form method="post" action="{{ url_for('approve', generation_id=gen.id) }}">
+                <button class="button" type="submit" {% if gen.approved %}disabled{% endif %}>👍 Апрув</button>
+              </form>
+              <form method="post" action="{{ url_for('regenerate', generation_id=gen.id) }}" style="display: flex; gap: 8px; align-items: center;">
+                <input name="api_key" type="password" placeholder="API key (опционально)" style="width: 220px;">
+                <button class="button secondary" type="submit">↻ Регенерировать</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p style="color: #94a3b8;">Пока нет генераций. Добавьте промт и нажмите «Запустить генерацию».</p>
+    {% endif %}
+
+    <script>
+      const blocksContainer = document.getElementById('prompt-blocks');
+      const addBlockButton = document.getElementById('add-block');
+
+      addBlockButton.addEventListener('click', () => {
+        const index = blocksContainer.querySelectorAll('.block-field').length + 1;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'block-field';
+        wrapper.innerHTML = `
+          <label>Блок ${index}</label>
+          <textarea name="prompt_blocks" rows="3" placeholder="Дополнительные детали"></textarea>
+        `;
+        blocksContainer.appendChild(wrapper);
+      });
+    </script>
+  </body>
+</html>
