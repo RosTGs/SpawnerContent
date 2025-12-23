@@ -131,6 +131,11 @@
         border: 1px solid #e2e8f0;
         background: #f8fafc;
       }
+      .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+      }
       .preview .placeholder {
         width: 100%;
         padding: 32px;
@@ -377,17 +382,24 @@
                     </ul>
                   </div>
                 {% endif %}
-              </div>
-              <div class="preview">
-                {% if gen.image_exists %}
-                  <img src="{{ url_for('serve_asset', filename=gen.image_filename) }}" alt="Результат генерации">
-                {% elif gen.image_filename %}
-                  <div class="placeholder">Файл {{ gen.image_filename }} не найден. Проверьте путь и перезапустите генерацию.</div>
-                {% else %}
-                  <div class="placeholder">Изображение появится после генерации.</div>
-                {% endif %}
-              </div>
             </div>
+            <div class="preview">
+              {% set images = gen.images %}
+              {% if images %}
+                <div class="preview-grid">
+                  {% for image in images %}
+                    {% if image.exists %}
+                      <img src="{{ url_for('serve_asset', filename=image.filename) }}" alt="Результат листа {{ loop.index }}">
+                    {% else %}
+                      <div class="placeholder">Файл {{ image.filename }} не найден. Проверьте путь и перезапустите генерацию.</div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="placeholder">Изображение появится после генерации.</div>
+              {% endif %}
+            </div>
+          </div>
 
             <div class="actions">
               <form method="post" action="{{ url_for('approve', generation_id=gen.id) }}">
