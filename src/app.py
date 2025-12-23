@@ -9,6 +9,7 @@ from typing import List, Optional
 from flask import (
     Flask,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -192,6 +193,64 @@ def create_app() -> Flask:
 
         return render_template(
             "index.html", generations=_generations, progress=progress, settings=_settings
+        )
+
+    @app.get("/status")
+    def status() -> object:
+        progress = {
+            "total": len(_generations),
+            "completed": len(
+                [
+                    gen
+                    for gen in _generations
+                    if gen.status in {"ready", "approved"}
+                ]
+            ),
+            "active": len(
+                [
+                    gen
+                    for gen in _generations
+                    if gen.status in {"generating", "regenerating"}
+                ]
+            ),
+        }
+
+        def serialize_generation(entry: GenerationEntry) -> dict[str, object]:
+            images: list[dict[str, object]] = []
+            for image in entry.images:
+                images.append(
+                    {
+                        "index": image["index"],
+                        "status": image["status"],
+                        "approved": image["approved"],
+                        "exists": image["exists"],
+                        "asset_url": url_for(
+                            "serve_asset", filename=image["asset_name"]
+                        )
+                        if image["exists"]
+                        else None,
+                        "filename": image["filename"],
+                    }
+                )
+
+            ready_count = len(
+                [img for img in images if img["status"] in {"ready", "approved"}]
+            )
+            return {
+                "id": entry.id,
+                "status": entry.status,
+                "status_label": STATUS_LABELS.get(entry.status, entry.status),
+                "approved": entry.approved,
+                "ready": ready_count,
+                "total": len(entry.sheet_prompts),
+                "images": images,
+            }
+
+        return jsonify(
+            {
+                "progress": progress,
+                "generations": [serialize_generation(gen) for gen in _generations],
+            }
         )
 
     @app.post("/generate")
