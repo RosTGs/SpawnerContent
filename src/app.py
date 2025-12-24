@@ -62,6 +62,7 @@ class GenerationEntry:
     image_paths: List[Optional[str]] = field(default_factory=list)
     image_statuses: List[str] = field(default_factory=list)
     image_approvals: List[bool] = field(default_factory=list)
+    pdf_image_candidates: List[List[str]] = field(default_factory=list)
     background_references: List[str] = field(default_factory=list)
     detail_references: List[str] = field(default_factory=list)
     text_parts: List[str] = field(default_factory=list)
@@ -126,6 +127,22 @@ class GenerationEntry:
                 }
             )
         return images
+
+    @property
+    def preferred_pdf_images(self) -> List[str]:
+        selected: List[str] = []
+        total = len(self.sheet_prompts)
+        for index in range(total):
+            base = self.image_paths[index] if index < len(self.image_paths) else None
+            candidates = (
+                self.pdf_image_candidates[index]
+                if index < len(self.pdf_image_candidates)
+                else []
+            )
+            preferred = next((path for path in candidates if path), base)
+            if preferred:
+                selected.append(preferred)
+        return selected
 
     def recalc_flags(self) -> None:
         self.approved = bool(self.image_approvals) and all(self.image_approvals)
@@ -353,7 +370,7 @@ def create_app() -> Flask:
             flash("Нужно апрувнуть все изображения, чтобы создать PDF.", "error")
             return redirect(url_for("index"))
 
-        valid_paths = [path for path in entry.image_paths if path]
+        valid_paths = [path for path in entry.preferred_pdf_images if path]
         if not valid_paths:
             flash("Нет изображений для формирования PDF.", "error")
             return redirect(url_for("index"))
@@ -387,6 +404,8 @@ def _ensure_image_lists(entry: GenerationEntry) -> None:
         entry.image_statuses.extend(["pending"] * (expected - len(entry.image_statuses)))
     if len(entry.image_approvals) < expected:
         entry.image_approvals.extend([False] * (expected - len(entry.image_approvals)))
+    if len(entry.pdf_image_candidates) < expected:
+        entry.pdf_image_candidates.extend([[] for _ in range(expected - len(entry.pdf_image_candidates))])
 
 
 def _register_generation(
@@ -409,6 +428,7 @@ def _register_generation(
         image_paths=[None] * len(sheet_prompts),
         image_statuses=["generating"] * len(sheet_prompts),
         image_approvals=[False] * len(sheet_prompts),
+        pdf_image_candidates=[[] for _ in sheet_prompts],
     )
     _next_generation_id += 1
     _generations.insert(0, entry)
@@ -422,6 +442,7 @@ def _run_generation(
         client = GeminiClient(api_key=api_key)
         generated_images: List[str] = []
         collected_text_parts: List[str] = []
+        collected_alternate_images: List[List[str]] = []
         combined_prompts: List[str] = []
 
         _ensure_image_lists(entry)
@@ -453,16 +474,21 @@ def _run_generation(
             entry.image_statuses[prompt_index] = "ready"
             entry.image_approvals[prompt_index] = False
             entry.latest_image = result.image_path
+            entry.pdf_image_candidates[prompt_index] = result.extra_images
 
             generated_images.append(result.image_path)
             collected_text_parts.extend(result.text_parts)
+            collected_alternate_images.append(result.extra_images)
             combined_prompts.append(full_prompt)
 
         if target_index is None:
             entry.image_paths = generated_images
             entry.text_parts = collected_text_parts
+            entry.pdf_image_candidates = collected_alternate_images
         elif collected_text_parts:
             entry.text_parts = [*entry.text_parts, *collected_text_parts]
+        if target_index is not None and collected_alternate_images:
+            entry.pdf_image_candidates[target_index] = collected_alternate_images[0]
 
         entry.recalc_flags()
         save_metadata(
@@ -478,6 +504,7 @@ def _run_generation(
                 latest_image=entry.latest_image,
                 images=generated_images,
                 text_parts=collected_text_parts,
+                alternate_images=entry.pdf_image_candidates,
             )
         )
         flash("Изображение готово и добавлено в список.", "success")

@@ -1,9 +1,12 @@
 """Gemini image generation helper."""
 from __future__ import annotations
 
+import base64
 import mimetypes
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable, List, Optional
 
 from google import genai
@@ -17,6 +20,7 @@ DEFAULT_MODEL = "gemini-3-pro-image-preview"
 class GenerationResult:
     image_path: str
     text_parts: List[str]
+    extra_images: List[str] = field(default_factory=list)
 
 
 class GeminiClient:
@@ -74,9 +78,13 @@ class GeminiClient:
 
         text_parts: List[str] = []
         saved_image_path: Optional[str] = None
+        extracted_images: List[str] = []
         for part in response.parts:
             if part.text is not None:
                 text_parts.append(part.text)
+                extracted_images.extend(
+                    self._extract_embedded_images(part.text, output_path)
+                )
             else:
                 image = part.as_image()
                 if image and saved_image_path is None:
@@ -84,10 +92,45 @@ class GeminiClient:
                     saved_image_path = output_path
         if saved_image_path is None:
             raise RuntimeError("No image was returned from the model.")
-        return GenerationResult(image_path=saved_image_path, text_parts=text_parts)
+        return GenerationResult(
+            image_path=saved_image_path,
+            text_parts=text_parts,
+            extra_images=extracted_images,
+        )
 
     @staticmethod
     def _save_image(image: Image.Image, path: str) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         image.save(path)
+
+    @staticmethod
+    def _extract_embedded_images(content: str, output_path: str) -> List[str]:
+        """Save embedded base64 images from the text response next to the main file."""
+
+        matches = list(
+            re.finditer(
+                r"data:image/(?P<ext>png|jpeg|jpg|webp);base64,(?P<data>[A-Za-z0-9+/=\n\r]+)",
+                content,
+            )
+        )
+
+        if not matches:
+            return []
+
+        base = Path(output_path)
+        saved: List[str] = []
+        for idx, match in enumerate(matches, start=1):
+            ext = match.group("ext") or "png"
+            raw = match.group("data")
+            try:
+                payload = base64.b64decode(raw)
+            except (ValueError, base64.binascii.Error):
+                continue
+
+            target = base.with_name(f"{base.stem}-embedded-{idx}.{ext}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+            saved.append(str(target))
+
+        return saved
 
