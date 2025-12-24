@@ -39,6 +39,8 @@ class Settings:
     """Persisted user preferences for the application."""
 
     api_key: str = ""
+    background_references: List[str] = field(default_factory=list)
+    detail_references: List[str] = field(default_factory=list)
 
 
 def ensure_output_dir(root: Path = DEFAULT_OUTPUT_DIR) -> Path:
@@ -68,7 +70,11 @@ def load_settings(path: Path = SETTINGS_FILE) -> Settings:
     if not path.exists():
         return Settings()
     raw = json.loads(path.read_text(encoding="utf-8"))
-    return Settings(api_key=raw.get("api_key", ""))
+    return Settings(
+        api_key=raw.get("api_key", ""),
+        background_references=raw.get("background_references", []),
+        detail_references=raw.get("detail_references", []),
+    )
 
 
 def save_settings(settings: Settings, path: Path = SETTINGS_FILE) -> Path:

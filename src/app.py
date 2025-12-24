@@ -275,12 +275,24 @@ def create_app() -> Flask:
             prefix="detail",
         )
 
+        merged_background_refs = _merge_references(
+            _settings.background_references, background_refs
+        )
+        merged_detail_refs = _merge_references(
+            _settings.detail_references, detail_refs
+        )
+
+        _settings.background_references = merged_background_refs
+        _settings.detail_references = merged_detail_refs
+        if background_refs or detail_refs:
+            save_settings(_settings)
+
         entry = _register_generation(
             sheet_prompts=sheet_prompts,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
-            background_references=background_refs,
-            detail_references=detail_refs,
+            background_references=merged_background_refs,
+            detail_references=merged_detail_refs,
         )
         _run_generation(entry, api_key)
         return redirect(url_for("index"))
@@ -305,7 +317,11 @@ def create_app() -> Flask:
     def update_settings() -> str:
         api_key = (request.form.get("saved_api_key") or "").strip()
         global _settings
-        _settings = Settings(api_key=api_key)
+        _settings = Settings(
+            api_key=api_key,
+            background_references=_settings.background_references,
+            detail_references=_settings.detail_references,
+        )
         save_settings(_settings)
         flash("Настройки сохранены и будут использоваться по умолчанию.", "success")
         return redirect(url_for("index"))
@@ -491,6 +507,14 @@ def _save_reference_uploads(files, *, generation_id: int, prefix: str) -> List[s
         saved_path = save_uploaded_file(upload, prefix=f"gen-{generation_id}-{prefix}")
         saved.append(str(saved_path))
     return saved
+
+
+def _merge_references(existing: List[str], uploaded: List[str]) -> List[str]:
+    """Combine saved and newly uploaded references without duplicates."""
+
+    merged = [*existing, *uploaded]
+    # Preserve order while removing duplicates
+    return list(dict.fromkeys(merged))
 
 
 if __name__ == "__main__":
