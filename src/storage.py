@@ -29,6 +29,7 @@ class SheetRecord:
     latest_image: Optional[str] = None
     images: List[str] = field(default_factory=list)
     text_parts: List[str] = field(default_factory=list)
+    alternate_images: List[List[str]] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2)
