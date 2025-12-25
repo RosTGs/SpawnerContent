@@ -16,6 +16,8 @@ from flask import (
     send_from_directory,
     url_for,
 )
+import yaml
+from werkzeug.datastructures import FileStorage
 
 from .gemini_client import GeminiClient
 from .storage import (
@@ -276,6 +278,20 @@ def create_app() -> Flask:
         aspect_ratio = request.form.get("aspect_ratio", ASPECT_RATIOS[0])
         resolution = request.form.get("resolution", RESOLUTIONS[0])
         sheet_prompts = [block.strip() for block in request.form.getlist("sheet_prompts") if block.strip()]
+
+        yaml_prompts: List[str] = []
+        yaml_file = request.files.get("prompt_yaml")
+        if yaml_file and yaml_file.filename:
+            try:
+                yaml_prompts = _load_yaml_prompts(yaml_file)
+            except ValueError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("index"))
+            except Exception as exc:  # noqa: BLE001
+                flash(f"Не удалось загрузить YAML: {exc}", "error")
+                return redirect(url_for("index"))
+
+        sheet_prompts.extend(yaml_prompts)
 
         if not sheet_prompts:
             flash("Добавьте хотя бы один промт листа для генерации.", "error")
@@ -548,6 +564,63 @@ def _build_generation_prompt(user_prompt: str) -> str:
     """Attach hidden style prompt to keep a consistent visual collection."""
 
     return f"{user_prompt}\n\n{SECRET_STYLE_PROMPT}"
+
+
+def _load_yaml_prompts(upload: FileStorage) -> List[str]:
+    """Parse a YAML file and extract sheet prompts.
+
+    Supported formats:
+    - A mapping with a "slides" list. Each item may be a string or a mapping with
+      "body" (required) and optional "title" that is prepended to the body.
+    - A top-level list of strings or mappings with the same shape as slides.
+    - A single string value.
+    """
+
+    content = upload.read()
+    if not content:
+        raise ValueError("Файл YAML пустой.")
+
+    try:
+        data = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Некорректный YAML: {exc}") from exc
+
+    prompts: List[str] = []
+
+    def _add_prompt(title: Optional[str], body: str) -> None:
+        text = body.strip()
+        if not text:
+            return
+        if title and title.strip():
+            text = f"{title.strip()}\n\n{text}"
+        prompts.append(text)
+
+    def _extract_from_entry(entry: object) -> None:
+        if isinstance(entry, str):
+            cleaned = entry.strip()
+            if cleaned:
+                prompts.append(cleaned)
+            return
+        if isinstance(entry, dict):
+            body = entry.get("body")
+            title = entry.get("title")
+            if isinstance(body, str):
+                _add_prompt(title if isinstance(title, str) else None, body)
+
+    if isinstance(data, dict) and isinstance(data.get("slides"), list):
+        for item in data["slides"]:
+            _extract_from_entry(item)
+    elif isinstance(data, list):
+        for item in data:
+            _extract_from_entry(item)
+    elif isinstance(data, str):
+        prompts.append(data.strip())
+
+    prompts = [prompt for prompt in prompts if prompt]
+    if not prompts:
+        raise ValueError("В YAML не найдено ни одного промта.")
+
+    return prompts
 
 
 def _save_reference_uploads(files, *, generation_id: int, prefix: str) -> List[str]:
