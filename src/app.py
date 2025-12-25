@@ -343,6 +343,30 @@ def create_app() -> Flask:
         flash("Настройки сохранены и будут использоваться по умолчанию.", "success")
         return redirect(url_for("index"))
 
+    @app.post("/settings/reference/remove")
+    def remove_reference() -> str:
+        reference_type = request.form.get("reference_type")
+        reference_path = (request.form.get("reference_path") or "").strip()
+
+        if reference_type not in {"background", "detail"} or not reference_path:
+            flash("Не удалось удалить референс: некорректные данные.", "error")
+            return redirect(url_for("index"))
+
+        target_list = (
+            _settings.background_references
+            if reference_type == "background"
+            else _settings.detail_references
+        )
+
+        if not _remove_reference(reference_path, target_list):
+            flash("Референс не найден среди сохранённых.", "error")
+            return redirect(url_for("index"))
+
+        save_settings(_settings)
+        _delete_reference_file(reference_path)
+        flash("Референс удалён и больше не будет подставляться.", "success")
+        return redirect(url_for("index"))
+
     @app.post("/approve/<int:generation_id>/image/<int:image_index>")
     def approve_image(generation_id: int, image_index: int) -> str:
         entry = _find_generation(generation_id)
@@ -542,6 +566,27 @@ def _merge_references(existing: List[str], uploaded: List[str]) -> List[str]:
     merged = [*existing, *uploaded]
     # Preserve order while removing duplicates
     return list(dict.fromkeys(merged))
+
+
+def _remove_reference(target: str, references: List[str]) -> bool:
+    """Remove a saved reference path if it exists."""
+
+    before = len(references)
+    references[:] = [ref for ref in references if ref != target]
+    return len(references) < before
+
+
+def _delete_reference_file(path_str: str) -> None:
+    """Delete a reference file from disk if it resides inside the output folder."""
+
+    try:
+        path = Path(path_str)
+        if not path.is_absolute():
+            path = DEFAULT_OUTPUT_DIR / path.name
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":
