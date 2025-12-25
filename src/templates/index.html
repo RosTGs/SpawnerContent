@@ -439,51 +439,6 @@
         </div>
       </div>
 
-      {% if settings.background_references or settings.detail_references %}
-        <div class="card" style="background: #f8fafc; border: 1px solid #e2e8f0;">
-          <h3 style="margin: 0 0 8px;">Сохранённые референсы</h3>
-          <p style="margin: 0 0 10px; color: #475569;">Будут автоматически подставлены в новую генерацию. Добавьте файлы выше, чтобы обновить список.</p>
-          <div class="row" style="margin-bottom: 0;">
-            {% if settings.background_references %}
-              <div>
-                <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы фона</h4>
-                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                  {% for ref in settings.background_references %}
-                    {% set filename = ref.rsplit('/', 1)[-1] %}
-                    <div class="reference-chip">
-                      <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="color: inherit; text-decoration: none;">📎 {{ filename }}</a>
-                      <form method="post" action="{{ url_for('remove_reference') }}">
-                        <input type="hidden" name="reference_type" value="background">
-                        <input type="hidden" name="reference_path" value="{{ ref }}">
-                        <button type="submit" title="Убрать референс">×</button>
-                      </form>
-                    </div>
-                  {% endfor %}
-                </div>
-              </div>
-            {% endif %}
-            {% if settings.detail_references %}
-              <div>
-                <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы контента</h4>
-                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                  {% for ref in settings.detail_references %}
-                    {% set filename = ref.rsplit('/', 1)[-1] %}
-                    <div class="reference-chip">
-                      <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="color: inherit; text-decoration: none;">📎 {{ filename }}</a>
-                      <form method="post" action="{{ url_for('remove_reference') }}">
-                        <input type="hidden" name="reference_type" value="detail">
-                        <input type="hidden" name="reference_path" value="{{ ref }}">
-                        <button type="submit" title="Убрать референс">×</button>
-                      </form>
-                    </div>
-                  {% endfor %}
-                </div>
-              </div>
-            {% endif %}
-          </div>
-        </div>
-      {% endif %}
-
       <div id="prompt-blocks" class="grid">
         <div class="block-field">
           <label>Промт листа 1</label>
@@ -498,6 +453,51 @@
         <button id="add-block" class="button secondary" type="button">+ Добавить лист</button>
       </div>
     </form>
+
+    {% if settings.background_references or settings.detail_references %}
+      <div class="card" style="background: #f8fafc; border: 1px solid #e2e8f0;">
+        <h3 style="margin: 0 0 8px;">Сохранённые референсы</h3>
+        <p style="margin: 0 0 10px; color: #475569;">Будут автоматически подставлены в новую генерацию. Добавьте файлы выше, чтобы обновить список.</p>
+        <div class="row" style="margin-bottom: 0;">
+          {% if settings.background_references %}
+            <div>
+              <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы фона</h4>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                {% for ref in settings.background_references %}
+                  {% set filename = ref.rsplit('/', 1)[-1] %}
+                  <div class="reference-chip">
+                    <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="color: inherit; text-decoration: none;">📎 {{ filename }}</a>
+                    <form method="post" action="{{ url_for('remove_reference') }}">
+                      <input type="hidden" name="reference_type" value="background">
+                      <input type="hidden" name="reference_path" value="{{ ref }}">
+                      <button type="submit" title="Убрать референс">×</button>
+                    </form>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+          {% if settings.detail_references %}
+            <div>
+              <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы контента</h4>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                {% for ref in settings.detail_references %}
+                  {% set filename = ref.rsplit('/', 1)[-1] %}
+                  <div class="reference-chip">
+                    <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="color: inherit; text-decoration: none;">📎 {{ filename }}</a>
+                    <form method="post" action="{{ url_for('remove_reference') }}">
+                      <input type="hidden" name="reference_type" value="detail">
+                      <input type="hidden" name="reference_path" value="{{ ref }}">
+                      <button type="submit" title="Убрать референс">×</button>
+                    </form>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
 
     <h2 style="margin: 28px 0 12px;">История генераций</h2>
     {% if generations %}
