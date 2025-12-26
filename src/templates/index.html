@@ -391,6 +391,39 @@
       </div>
     </form>
 
+    <form class="card" method="post" action="{{ url_for('fetch_channel_videos') }}">
+      <div class="header-actions">
+        <div>
+          <h2 style="margin: 0 0 6px;">Видео по ссылке на канал</h2>
+          <p style="margin: 0; color: #475569;">Список видимых видео без YouTube API: достаточно вставить ссылку на канал.</p>
+        </div>
+        <button class="button secondary" type="submit">Показать видео</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="channel_url">Ссылка на канал YouTube</label>
+          <input id="channel_url" name="channel_url" type="text" placeholder="https://www.youtube.com/@handle или /channel/ID" value="{{ channel_lookup.channel_url }}">
+          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Используется RSS лента, API ключи не нужны.</p>
+        </div>
+      </div>
+
+      {% if channel_lookup.videos %}
+        <div class="row" style="margin-bottom: 0;">
+          <div style="grid-column: 1 / -1;">
+            <div style="display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+              {% for video in channel_lookup.videos %}
+                <div class="card" style="box-shadow: none; border: 1px solid #e2e8f0; margin: 0;">
+                  <div style="font-weight: 700; margin-bottom: 6px;">{{ video.title }}</div>
+                  <a href="{{ video.url }}" target="_blank" style="color: #2563eb; font-weight: 600; text-decoration: none;">Открыть на YouTube →</a>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    </form>
+
     <form class="card" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data">
       <div class="header-actions">
         <div>
