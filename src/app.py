@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import os
+import re
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -176,6 +180,7 @@ class GenerationEntry:
 _generations: List[GenerationEntry] = []
 _next_generation_id = 1
 _settings: Settings = load_settings()
+_channel_lookup: dict[str, object] | None = None
 
 
 def create_app() -> Flask:
@@ -192,6 +197,7 @@ def create_app() -> Flask:
 
     @app.route("/")
     def index() -> str:
+        channel_lookup = _channel_lookup or {"videos": [], "channel_url": ""}
         progress = {
             "total": len(_generations),
             "completed": len(
@@ -211,7 +217,11 @@ def create_app() -> Flask:
         }
 
         return render_template(
-            "index.html", generations=_generations, progress=progress, settings=_settings
+            "index.html",
+            generations=_generations,
+            progress=progress,
+            settings=_settings,
+            channel_lookup=channel_lookup,
         )
 
     @app.get("/status")
@@ -274,7 +284,7 @@ def create_app() -> Flask:
 
     @app.post("/generate")
     def generate() -> str:
-        api_key = request.form.get("api_key") or _settings.api_key or None
+        api_key = _resolve_api_key(request.form.get("api_key"))
         aspect_ratio = request.form.get("aspect_ratio", ASPECT_RATIOS[0])
         resolution = request.form.get("resolution", RESOLUTIONS[0])
         sheet_prompts = [block.strip() for block in request.form.getlist("sheet_prompts") if block.strip()]
@@ -320,6 +330,10 @@ def create_app() -> Flask:
         if background_refs or detail_refs:
             save_settings(_settings)
 
+        if not api_key:
+            flash("Укажите Gemini API ключ в настройках или в форме перед запуском генерации.", "error")
+            return redirect(url_for("index"))
+
         entry = _register_generation(
             sheet_prompts=sheet_prompts,
             aspect_ratio=aspect_ratio,
@@ -332,7 +346,7 @@ def create_app() -> Flask:
 
     @app.post("/regenerate/<int:generation_id>/image/<int:image_index>")
     def regenerate_image(generation_id: int, image_index: int) -> str:
-        api_key = request.form.get("api_key") or _settings.api_key or None
+        api_key = _resolve_api_key(request.form.get("api_key"))
         entry = _find_generation(generation_id)
         if not entry:
             flash("Не удалось найти указанную генерацию.", "error")
@@ -340,6 +354,10 @@ def create_app() -> Flask:
         _ensure_image_lists(entry)
         if image_index < 0 or image_index >= len(entry.sheet_prompts):
             flash("Некорректный номер изображения для регенерации.", "error")
+            return redirect(url_for("index"))
+
+        if not api_key:
+            flash("Добавьте Gemini API ключ, чтобы перегенерировать изображение.", "error")
             return redirect(url_for("index"))
         entry.image_approvals[image_index] = False
         entry.image_statuses[image_index] = "regenerating"
@@ -357,6 +375,31 @@ def create_app() -> Flask:
         )
         save_settings(_settings)
         flash("Настройки сохранены и будут использоваться по умолчанию.", "success")
+        return redirect(url_for("index"))
+
+    @app.post("/channel/videos")
+    def fetch_channel_videos() -> str:
+        channel_url = (request.form.get("channel_url") or "").strip()
+        if not channel_url:
+            flash("Добавьте ссылку на канал YouTube для загрузки видео.", "error")
+            return redirect(url_for("index"))
+
+        try:
+            videos = _load_channel_videos(channel_url)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("index"))
+        except Exception as exc:  # noqa: BLE001
+            flash(f"Не удалось загрузить видео канала: {exc}", "error")
+            return redirect(url_for("index"))
+
+        global _channel_lookup
+        _channel_lookup = {"videos": videos, "channel_url": channel_url}
+
+        if videos:
+            flash(f"Найдено {len(videos)} видео в открытом доступе.", "success")
+        else:
+            flash("Видео не найдены или канал пуст.", "error")
         return redirect(url_for("index"))
 
     @app.post("/settings/reference/remove")
@@ -434,6 +477,13 @@ def _find_generation(generation_id: int) -> Optional[GenerationEntry]:
         if entry.id == generation_id:
             return entry
     return None
+
+
+def _resolve_api_key(raw_api_key: Optional[str]) -> Optional[str]:
+    """Return the first available API ключ из формы, настроек или окружения."""
+
+    resolved = (raw_api_key or _settings.api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    return resolved or None
 
 
 def _ensure_image_lists(entry: GenerationEntry) -> None:
@@ -548,6 +598,13 @@ def _run_generation(
             )
         )
         flash("Изображение готово и добавлено в список.", "success")
+    except ValueError as exc:
+        if target_index is None:
+            entry.image_statuses = ["error"] * len(entry.sheet_prompts)
+        else:
+            entry.image_statuses[target_index] = "error"
+        entry.recalc_flags()
+        flash(str(exc), "error")
     except Exception as exc:  # noqa: BLE001
         if target_index is None:
             entry.image_statuses = ["error"] * len(entry.sheet_prompts)
@@ -660,6 +717,58 @@ def _delete_reference_file(path_str: str) -> None:
             path.unlink()
     except OSError:
         pass
+
+
+def _load_channel_videos(channel_url: str) -> list[dict[str, str]]:
+    channel_id = _extract_channel_id(channel_url)
+    if not channel_id:
+        raise ValueError("Не удалось определить ID канала по ссылке.")
+
+    feed_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    try:
+        with urllib.request.urlopen(feed_url, timeout=10) as response:
+            feed_xml = response.read()
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"Не удалось открыть RSS-ленту канала: {exc}") from exc
+
+    try:
+        root = ET.fromstring(feed_xml)
+    except ET.ParseError as exc:
+        raise ValueError("Не удалось разобрать RSS-ленту канала.") from exc
+
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    videos: list[dict[str, str]] = []
+    for entry in root.findall("atom:entry", ns):
+        title_node = entry.find("atom:title", ns)
+        link_node = entry.find("atom:link", ns)
+        video_url = link_node.attrib.get("href", "") if link_node is not None else ""
+        title = title_node.text if title_node is not None else ""
+        if title or video_url:
+            videos.append({"title": title, "url": video_url})
+    return videos
+
+
+def _extract_channel_id(channel_url: str) -> str:
+    parsed = urllib.parse.urlparse(channel_url)
+    path = parsed.path.rstrip("/")
+    if "/channel/" in path:
+        return path.split("/channel/")[-1].split("/")[0]
+
+    if path.startswith("/@"):
+        handle_html = _download_html(channel_url)
+        match = re.search(r'"channelId":"(UC[^"]+)"', handle_html)
+        return match.group(1) if match else ""
+
+    if "youtube.com" in parsed.netloc and (parsed.path == "" or parsed.path == "/"):
+        return ""
+
+    match = re.search(r"(UC[0-9A-Za-z_-]{21}[AQgw])", channel_url)
+    return match.group(1) if match else ""
+
+
+def _download_html(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=10) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 
 if __name__ == "__main__":
