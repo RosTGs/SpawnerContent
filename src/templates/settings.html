@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-head">
+    <p class="muted">Страница</p>
+    <h1>Настройки</h1>
+    <p class="muted">Сохранённый API ключ и референсы для генераций.</p>
+  </header>
+
+  <section class="card">
+    <h3>Ключ и ссылки</h3>
+    <form id="settings-form" class="stack">
+      <label>
+        Gemini API key
+        <input type="password" name="saved_api_key" placeholder="sk-..." />
+      </label>
+      <div class="row" style="gap: 0.5rem">
+        <label class="stack" style="flex: 1">
+          Фоновые референсы (через запятую)
+          <input type="text" name="background_references" placeholder="bg1.png, bg2.png" />
+        </label>
+        <label class="stack" style="flex: 1">
+          Детальные референсы (через запятую)
+          <input type="text" name="detail_references" placeholder="item1.png, item2.png" />
+        </label>
+      </div>
+      <div class="row" style="justify-content: space-between">
+        <small class="muted">Ссылки сохраняются в файл output/settings.json</small>
+        <button type="submit">Сохранить</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <header class="row" style="justify-content: space-between">
+      <div>
+        <p class="muted">Служебное</p>
+        <h3 style="margin: 0">Активные генерации</h3>
+      </div>
+      <button id="refresh-status" class="secondary">Обновить статус</button>
+    </header>
+    <div id="status-summary" class="stack"></div>
+  </section>
+{% endblock %}
