@@ -28,8 +28,10 @@ function setActiveNav(page) {
 }
 
 async function fetchJSON(url, options = {}) {
+  const isFormData = options.body instanceof FormData;
+  const headers = isFormData ? {} : { "Content-Type": "application/json" };
   const response = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
+    headers: { ...headers, ...(options.headers || {}) },
     ...options,
   });
   const payload = await response.json();
@@ -37,6 +39,46 @@ async function fetchJSON(url, options = {}) {
     throw new Error(payload.error || t("js.misc.error_default", t("common.request_failed")));
   }
   return payload;
+}
+
+function parseIds(rawValue) {
+  if (!rawValue) return [];
+  return rawValue
+    .toString()
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => Number.parseInt(value, 10))
+    .filter((value) => !Number.isNaN(value));
+}
+
+async function deleteProject(projectId) {
+  try {
+    await fetchJSON(`/api/projects/${projectId}`, { method: "DELETE" });
+    loadProjects();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function deleteTemplate(templateId) {
+  try {
+    await fetchJSON(`/api/templates/${templateId}`, { method: "DELETE" });
+    loadTemplates();
+    loadProjects();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function deleteAsset(assetId) {
+  try {
+    await fetchJSON(`/api/assets/${assetId}`, { method: "DELETE" });
+    loadAssets();
+    loadProjects();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function renderProjects(projects) {
@@ -55,14 +97,16 @@ function renderProjects(projects) {
         <div class="stack" style="gap: 0.25rem">
           <strong>${project.name}</strong>
           <span class="muted">${project.description || t("common.no_description")}</span>
-          <small class="muted">ID: ${project.id}</small>
+          <small class="muted">${t("projects.templates_label")}: ${project.templates} · ${t("projects.assets_label")}: ${project.assets}</small>
+          <small class="muted">${project.author || t("common.no_author", "")}</small>
+          <small class="muted">${project.created_at || ""}</small>
         </div>
         <div class="stack" style="align-items: flex-end">
           <span class="badge">${project.status}</span>
-          <span class="pill">${t("projects.templates_label")}: ${project.templates}</span>
-          <span class="pill">${t("projects.assets_label")}: ${project.assets}</span>
+          <button class="secondary" data-project-delete="${project.id}">${t("common.delete", "Удалить")}</button>
         </div>
       </div>`;
+    item.querySelector("[data-project-delete]")?.addEventListener("click", () => deleteProject(project.id));
     list.appendChild(item);
   });
 }
@@ -83,12 +127,21 @@ function renderTemplates(templates) {
         <div class="stack" style="gap: 0.25rem">
           <strong>${tpl.name}</strong>
           <span class="muted">${tpl.category || t("common.no_category")}</span>
+          <span class="muted">${tpl.description || t("common.no_description")}</span>
+          <small class="muted">${tpl.author || t("common.no_author", "")}</small>
+          <small class="muted">${tpl.created_at || ""}</small>
         </div>
-        <span class="pill">${format(
-          t("js.templates.used_by", `${tpl.used_by}`),
-          { count: tpl.used_by },
-        )}</span>
+        <div class="stack" style="align-items: flex-end">
+          <span class="pill">${format(
+            t("js.templates.used_by", `${tpl.used_by}`),
+            { count: tpl.used_by },
+          )}</span>
+          <button class="secondary" data-template-delete="${tpl.id}">${t("common.delete", "Удалить")}</button>
+        </div>
       </div>`;
+    item
+      .querySelector("[data-template-delete]")
+      ?.addEventListener("click", () => deleteTemplate(tpl.id));
     list.appendChild(item);
   });
 }
@@ -110,6 +163,9 @@ function renderAssets(assets) {
           <strong>${asset.filename}</strong>
           <span class="muted">${asset.kind}</span>
           <small class="muted">${asset.description || t("common.no_description")}</small>
+          <small class="muted">${asset.author || t("common.no_author", "")}</small>
+          <small class="muted">${asset.created_at || ""}</small>
+          ${asset.asset_url ? `<a class="link" href="${asset.asset_url}" target="_blank" rel="noreferrer">${t("assets.open", "Открыть")}</a>` : ""}
         </div>
         <div class="stack" style="align-items: flex-end">
           <span class="pill">${format(t("js.assets.size", `${asset.size}`), {
@@ -118,8 +174,10 @@ function renderAssets(assets) {
           <span class="pill">${format(t("js.assets.projects", `${asset.project_count}`), {
             count: asset.project_count,
           })}</span>
+          <button class="secondary" data-asset-delete="${asset.id}">${t("common.delete", "Удалить")}</button>
         </div>
       </div>`;
+    item.querySelector("[data-asset-delete]")?.addEventListener("click", () => deleteAsset(asset.id));
     list.appendChild(item);
   });
 }
@@ -201,10 +259,19 @@ function registerForms(page) {
       const name = formData.get("name");
       if (!name) return;
       const description = formData.get("description") || "";
+      const author = formData.get("author") || "";
+      const templateIds = parseIds(formData.get("template_ids"));
+      const assetIds = parseIds(formData.get("asset_ids"));
       try {
         await fetchJSON("/api/projects", {
           method: "POST",
-          body: JSON.stringify({ name, description }),
+          body: JSON.stringify({
+            name,
+            description,
+            author,
+            template_ids: templateIds,
+            asset_ids: assetIds,
+          }),
         });
         form.reset();
         loadProjects();
@@ -222,10 +289,12 @@ function registerForms(page) {
       const name = formData.get("name");
       if (!name) return;
       const category = formData.get("category") || "";
+      const description = formData.get("description") || "";
+      const author = formData.get("author") || "";
       try {
         await fetchJSON("/api/templates", {
           method: "POST",
-          body: JSON.stringify({ name, category }),
+          body: JSON.stringify({ name, category, description, author }),
         });
         form.reset();
         loadTemplates();
@@ -281,6 +350,25 @@ function hydrate(page) {
     loadTemplates();
   }
   if (page === "assets") {
+    const form = document.getElementById("asset-form");
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const templateIds = parseIds(formData.get("template_ids"));
+      const projectIds = parseIds(formData.get("project_ids"));
+      formData.set("template_ids", templateIds.join(","));
+      formData.set("project_ids", projectIds.join(","));
+      try {
+        await fetchJSON("/api/assets", {
+          method: "POST",
+          body: formData,
+        });
+        form.reset();
+        loadAssets();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
     loadAssets();
   }
   if (page === "settings") {
