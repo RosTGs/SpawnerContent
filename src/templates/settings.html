@@ -1,31 +1,31 @@
 {% extends "base.html" %}
 {% block content %}
   <header class="page-head">
-    <p class="muted">Страница</p>
-    <h1>Настройки</h1>
-    <p class="muted">Сохранённый API ключ и референсы для генераций.</p>
+    <p class="muted">{{ t("common.page") }}</p>
+    <h1>{{ t("settings.title") }}</h1>
+    <p class="muted">{{ t("settings.description") }}</p>
   </header>
 
   <section class="card">
-    <h3>Ключ и ссылки</h3>
+    <h3>{{ t("settings.form_title") }}</h3>
     <form id="settings-form" class="stack">
       <label>
-        Gemini API key
-        <input type="password" name="saved_api_key" placeholder="sk-..." />
+        {{ t("settings.api_key") }}
+        <input type="password" name="saved_api_key" placeholder="{{ t('settings.api_placeholder') }}" />
       </label>
       <div class="row" style="gap: 0.5rem">
         <label class="stack" style="flex: 1">
-          Фоновые референсы (через запятую)
-          <input type="text" name="background_references" placeholder="bg1.png, bg2.png" />
+          {{ t("settings.background_refs") }}
+          <input type="text" name="background_references" placeholder="{{ t('settings.background_placeholder') }}" />
         </label>
         <label class="stack" style="flex: 1">
-          Детальные референсы (через запятую)
-          <input type="text" name="detail_references" placeholder="item1.png, item2.png" />
+          {{ t("settings.detail_refs") }}
+          <input type="text" name="detail_references" placeholder="{{ t('settings.detail_placeholder') }}" />
         </label>
       </div>
       <div class="row" style="justify-content: space-between">
-        <small class="muted">Ссылки сохраняются в файл output/settings.json</small>
-        <button type="submit">Сохранить</button>
+        <small class="muted">{{ t("settings.save_hint") }}</small>
+        <button type="submit">{{ t("common.save") }}</button>
       </div>
     </form>
   </section>
@@ -33,10 +33,10 @@
   <section class="card">
     <header class="row" style="justify-content: space-between">
       <div>
-        <p class="muted">Служебное</p>
-        <h3 style="margin: 0">Активные генерации</h3>
+        <p class="muted">{{ t("common.service") }}</p>
+        <h3 style="margin: 0">{{ t("common.active_generations") }}</h3>
       </div>
-      <button id="refresh-status" class="secondary">Обновить статус</button>
+      <button id="refresh-status" class="secondary">{{ t("common.refresh") }}</button>
     </header>
     <div id="status-summary" class="stack"></div>
   </section>
