@@ -17,6 +17,18 @@
         {{ t("projects.form.description") }}
         <input type="text" name="description" placeholder="{{ t('projects.form.description_placeholder') }}" />
       </label>
+      <label>
+        {{ t("projects.form.author") }}
+        <input type="text" name="author" placeholder="{{ t('projects.form.author_placeholder') }}" />
+      </label>
+      <label>
+        {{ t("projects.form.templates") }}
+        <input type="text" name="template_ids" placeholder="1,2,3" />
+      </label>
+      <label>
+        {{ t("projects.form.assets") }}
+        <input type="text" name="asset_ids" placeholder="1,4" />
+      </label>
       <button type="submit">{{ t("common.save") }}</button>
     </form>
   </section>

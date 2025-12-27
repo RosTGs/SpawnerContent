@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -24,15 +25,30 @@ from werkzeug.datastructures import FileStorage
 
 from .gemini_client import GeminiClient
 from .storage import (
+    ASSETS_FILE,
+    DATA_DIR,
     DEFAULT_OUTPUT_DIR,
+    PROJECTS_FILE,
+    SETTINGS_FILE,
+    TEMPLATES_FILE,
+    AssetRecord,
+    ProjectRecord,
     Settings,
     SheetRecord,
+    TemplateRecord,
+    ensure_data_dir,
     ensure_output_dir,
     export_pdf,
-    new_asset_path,
-    save_metadata,
+    load_assets,
+    load_projects,
     load_settings,
+    load_templates,
+    new_asset_path,
+    save_assets,
+    save_metadata,
+    save_projects,
     save_settings,
+    save_templates,
     save_uploaded_file,
 )
 from .localization import (
@@ -187,57 +203,112 @@ _next_generation_id = 1
 _settings: Settings = load_settings()
 _channel_lookup: dict[str, object] | None = None
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-_projects: list[dict[str, object]] = [
-    {
-        "id": 1,
-        "name": "Product launch",
-        "description": "Карточки для лендинга и анонсов",
-        "status": "active",
-        "templates": 3,
-        "assets": 5,
-    },
-    {
-        "id": 2,
-        "name": "YouTube pack",
-        "description": "Оформление канала и превью",
-        "status": "paused",
-        "templates": 2,
-        "assets": 4,
-    },
-]
-_templates: list[dict[str, object]] = [
-    {"id": 1, "name": "Instagram карусели", "category": "social", "used_by": 2},
-    {"id": 2, "name": "YouTube превью", "category": "video", "used_by": 1},
-    {"id": 3, "name": "PDF-презентация", "category": "print", "used_by": 1},
-]
-_assets: list[dict[str, object]] = [
-    {
-        "id": 1,
-        "filename": "brand-kit.png",
-        "kind": "image/png",
-        "size": "240 KB",
-        "description": "Фирменная палитра",
-        "project_count": 3,
-    },
-    {
-        "id": 2,
-        "filename": "hero-photo.jpg",
-        "kind": "image/jpeg",
-        "size": "1.3 MB",
-        "description": "Главный персонаж",
-        "project_count": 2,
-    },
-    {
-        "id": 3,
-        "filename": "bg-texture.svg",
-        "kind": "image/svg+xml",
-        "size": "54 KB",
-        "description": "Универсальный фон",
-        "project_count": 2,
-    },
-]
-_next_project_id = len(_projects) + 1
-_next_template_id = len(_templates) + 1
+ensure_data_dir(DATA_DIR)
+_projects: list[ProjectRecord] = load_projects(PROJECTS_FILE)
+_templates: list[TemplateRecord] = load_templates(TEMPLATES_FILE)
+_assets: list[AssetRecord] = load_assets(ASSETS_FILE)
+_next_project_id = 1 + max((project.id for project in _projects), default=0)
+_next_template_id = 1 + max((template.id for template in _templates), default=0)
+_next_asset_id = 1 + max((asset.id for asset in _assets), default=0)
+
+
+def _timestamp() -> str:
+    return datetime.utcnow().isoformat()
+
+
+def _sync_relations() -> None:
+    asset_lookup = {asset.id: asset for asset in _assets}
+    for asset in _assets:
+        asset.project_ids = [pid for pid in asset.project_ids if pid]
+        asset.template_ids = [tid for tid in asset.template_ids if tid]
+
+    for project in _projects:
+        for asset_id in project.asset_ids:
+            asset = asset_lookup.get(asset_id)
+            if asset and project.id not in asset.project_ids:
+                asset.project_ids.append(project.id)
+
+    template_usage: dict[int, int] = {template.id: 0 for template in _templates}
+    for project in _projects:
+        for template_id in project.template_ids:
+            template_usage[template_id] = template_usage.get(template_id, 0) + 1
+    for template in _templates:
+        template.used_by = template_usage.get(template.id, 0)
+
+
+def _persist_catalogs() -> None:
+    save_projects(_projects, PROJECTS_FILE)
+    save_templates(_templates, TEMPLATES_FILE)
+    save_assets(_assets, ASSETS_FILE)
+
+
+def _serialize_project(project: ProjectRecord) -> dict[str, object]:
+    return {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "author": project.author,
+        "status": project.status,
+        "created_at": project.created_at,
+        "updated_at": project.updated_at,
+        "templates": len(project.template_ids),
+        "assets": len(project.asset_ids),
+        "template_ids": project.template_ids,
+        "asset_ids": project.asset_ids,
+    }
+
+
+def _serialize_template(template: TemplateRecord) -> dict[str, object]:
+    return {
+        "id": template.id,
+        "name": template.name,
+        "category": template.category,
+        "description": template.description,
+        "author": template.author,
+        "status": template.status,
+        "created_at": template.created_at,
+        "updated_at": template.updated_at,
+        "used_by": template.used_by,
+    }
+
+
+def _serialize_asset(asset: AssetRecord) -> dict[str, object]:
+    return {
+        "id": asset.id,
+        "filename": asset.filename,
+        "kind": asset.kind,
+        "size": asset.size,
+        "description": asset.description,
+        "author": asset.author,
+        "created_at": asset.created_at,
+        "project_ids": asset.project_ids,
+        "template_ids": asset.template_ids,
+        "project_count": len(asset.project_ids),
+        "path": asset.path,
+    }
+
+
+def _parse_ids(raw_value: object) -> list[int]:
+    if isinstance(raw_value, list):
+        return [int(item) for item in raw_value if str(item).strip().isdigit()]
+    if isinstance(raw_value, str):
+        return [int(item) for item in raw_value.split(",") if item.strip().isdigit()]
+    return []
+
+
+_sync_relations()
+
+
+def _find_project(project_id: int) -> ProjectRecord | None:
+    return next((item for item in _projects if item.id == project_id), None)
+
+
+def _find_template(template_id: int) -> TemplateRecord | None:
+    return next((item for item in _templates if item.id == template_id), None)
+
+
+def _find_asset(asset_id: int) -> AssetRecord | None:
+    return next((item for item in _assets if item.id == asset_id), None)
 
 
 def create_app() -> Flask:
@@ -326,55 +397,212 @@ def create_app() -> Flask:
 
     @app.get("/api/projects")
     def api_projects() -> object:
-        return jsonify({"projects": _projects})
+        _sync_relations()
+        return jsonify({"projects": [_serialize_project(project) for project in _projects]})
 
     @app.post("/api/projects")
     def api_create_project() -> object:
         payload = _get_request_data()
         name = (payload.get("name") or "").strip()
         description = (payload.get("description") or "").strip()
+        author = (payload.get("author") or "").strip()
+        template_ids = _parse_ids(payload.get("template_ids"))
+        asset_ids = _parse_ids(payload.get("asset_ids"))
         if not name:
             return jsonify({"error": "Укажите название проекта"}), 400
 
         global _next_project_id
-        project = {
-            "id": _next_project_id,
-            "name": name,
-            "description": description,
-            "status": "active",
-            "templates": 0,
-            "assets": 0,
-        }
+        project = ProjectRecord(
+            id=_next_project_id,
+            name=name,
+            description=description,
+            author=author,
+            status="active",
+            created_at=_timestamp(),
+            updated_at=_timestamp(),
+            template_ids=template_ids,
+            asset_ids=asset_ids,
+        )
         _projects.insert(0, project)
         _next_project_id += 1
-        return jsonify({"message": "Проект сохранён", "project": project})
+        _sync_relations()
+        _persist_catalogs()
+        return jsonify({"message": "Проект сохранён", "project": _serialize_project(project)})
+
+    @app.put("/api/projects/<int:project_id>")
+    def api_update_project(project_id: int) -> object:
+        project = _find_project(project_id)
+        if not project:
+            return jsonify({"error": "Проект не найден"}), 404
+
+        payload = _get_request_data()
+        if "name" in payload:
+            project.name = str(payload.get("name") or project.name)
+        if "description" in payload:
+            project.description = str(payload.get("description") or project.description)
+        if "status" in payload:
+            project.status = str(payload.get("status") or project.status)
+        if "author" in payload:
+            project.author = str(payload.get("author") or project.author)
+        if "template_ids" in payload:
+            project.template_ids = _parse_ids(payload.get("template_ids"))
+        if "asset_ids" in payload:
+            project.asset_ids = _parse_ids(payload.get("asset_ids"))
+
+        project.updated_at = _timestamp()
+        _sync_relations()
+        _persist_catalogs()
+        return jsonify({"message": "Проект обновлён", "project": _serialize_project(project)})
+
+    @app.delete("/api/projects/<int:project_id>")
+    def api_delete_project(project_id: int) -> object:
+        project = _find_project(project_id)
+        if not project:
+            return jsonify({"error": "Проект не найден"}), 404
+
+        _projects.remove(project)
+        _sync_relations()
+        _persist_catalogs()
+        return jsonify({"message": "Проект удалён", "id": project_id})
 
     @app.get("/api/templates")
     def api_templates() -> object:
-        return jsonify({"templates": _templates})
+        _sync_relations()
+        return jsonify({"templates": [_serialize_template(template) for template in _templates]})
 
     @app.post("/api/templates")
     def api_create_template() -> object:
         payload = _get_request_data()
         name = (payload.get("name") or "").strip()
         category = (payload.get("category") or "").strip()
+        description = (payload.get("description") or "").strip()
+        author = (payload.get("author") or "").strip()
         if not name:
             return jsonify({"error": "Укажите название темплейта"}), 400
 
         global _next_template_id
-        template = {
-            "id": _next_template_id,
-            "name": name,
-            "category": category,
-            "used_by": 0,
-        }
+        template = TemplateRecord(
+            id=_next_template_id,
+            name=name,
+            category=category,
+            description=description,
+            author=author,
+            status="draft",
+            created_at=_timestamp(),
+            updated_at=_timestamp(),
+        )
         _templates.insert(0, template)
         _next_template_id += 1
-        return jsonify({"message": "Темплейт добавлен", "template": template})
+        _sync_relations()
+        _persist_catalogs()
+        return jsonify({"message": "Темплейт добавлен", "template": _serialize_template(template)})
+
+    @app.put("/api/templates/<int:template_id>")
+    def api_update_template(template_id: int) -> object:
+        template = _find_template(template_id)
+        if not template:
+            return jsonify({"error": "Темплейт не найден"}), 404
+
+        payload = _get_request_data()
+        if "name" in payload:
+            template.name = str(payload.get("name") or template.name)
+        if "category" in payload:
+            template.category = str(payload.get("category") or template.category)
+        if "description" in payload:
+            template.description = str(payload.get("description") or template.description)
+        if "status" in payload:
+            template.status = str(payload.get("status") or template.status)
+        if "author" in payload:
+            template.author = str(payload.get("author") or template.author)
+
+        template.updated_at = _timestamp()
+        _persist_catalogs()
+        return jsonify({"message": "Темплейт обновлён", "template": _serialize_template(template)})
+
+    @app.delete("/api/templates/<int:template_id>")
+    def api_delete_template(template_id: int) -> object:
+        template = _find_template(template_id)
+        if not template:
+            return jsonify({"error": "Темплейт не найден"}), 404
+
+        for project in _projects:
+            if template_id in project.template_ids:
+                project.template_ids.remove(template_id)
+
+        _templates.remove(template)
+        _sync_relations()
+        _persist_catalogs()
+        return jsonify({"message": "Темплейт удалён", "id": template_id})
 
     @app.get("/api/assets")
     def api_assets() -> object:
-        return jsonify({"assets": _assets})
+        _sync_relations()
+        assets_payload = []
+        for asset in _assets:
+            serialized = _serialize_asset(asset)
+            if asset.path:
+                serialized["asset_url"] = url_for("serve_asset", filename=Path(asset.path).name)
+            assets_payload.append(serialized)
+        return jsonify({"assets": assets_payload})
+
+    @app.post("/api/assets")
+    def api_create_asset() -> object:
+        payload = _get_request_data()
+        upload = request.files.get("file")
+        description = (payload.get("description") or "").strip()
+        author = (payload.get("author") or "").strip()
+        template_ids = _parse_ids(payload.get("template_ids"))
+        project_ids = _parse_ids(payload.get("project_ids"))
+
+        if not upload and not payload.get("filename"):
+            return jsonify({"error": "Добавьте файл или укажите название ассета"}), 400
+
+        global _next_asset_id
+        filename = (payload.get("filename") or "").strip() or (upload.filename if upload else "asset")
+        kind = upload.mimetype if upload else str(payload.get("kind") or "application/octet-stream")
+        saved_path: Path | None = None
+        size_label = str(payload.get("size") or "")
+        if upload:
+            saved_path = save_uploaded_file(upload, prefix=filename, root=DEFAULT_OUTPUT_DIR)
+            saved_size = saved_path.stat().st_size
+            size_label = f"{round(saved_size / 1024, 1)} KB"
+
+        asset = AssetRecord(
+            id=_next_asset_id,
+            filename=filename,
+            kind=kind,
+            size=size_label,
+            description=description,
+            author=author,
+            path=saved_path.as_posix() if saved_path else str(payload.get("path") or ""),
+            created_at=_timestamp(),
+            template_ids=template_ids,
+            project_ids=project_ids,
+        )
+
+        _assets.insert(0, asset)
+        _next_asset_id += 1
+        _sync_relations()
+        _persist_catalogs()
+        serialized = _serialize_asset(asset)
+        if asset.path:
+            serialized["asset_url"] = url_for("serve_asset", filename=Path(asset.path).name)
+        return jsonify({"message": "Ассет добавлен", "asset": serialized})
+
+    @app.delete("/api/assets/<int:asset_id>")
+    def api_delete_asset(asset_id: int) -> object:
+        asset = _find_asset(asset_id)
+        if not asset:
+            return jsonify({"error": "Ассет не найден"}), 404
+
+        for project in _projects:
+            if asset_id in project.asset_ids:
+                project.asset_ids.remove(asset_id)
+
+        _assets.remove(asset)
+        _sync_relations()
+        _persist_catalogs()
+        return jsonify({"message": "Ассет удалён", "id": asset_id})
 
     @app.get("/api/settings")
     def api_settings() -> object:
