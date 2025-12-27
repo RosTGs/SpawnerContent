@@ -13,6 +13,7 @@ from typing import List, Optional
 from flask import (
     Flask,
     jsonify,
+    make_response,
     render_template,
     request,
     send_from_directory,
@@ -33,6 +34,12 @@ from .storage import (
     load_settings,
     save_settings,
     save_uploaded_file,
+)
+from .localization import (
+    dump_translations_json,
+    get_frontend_translations,
+    get_translations,
+    translate,
 )
 
 ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
@@ -236,13 +243,33 @@ _next_template_id = len(_templates) + 1
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+    translations = get_translations()
+    available_languages = sorted(translations.keys())
+
+    def _resolve_language() -> str:
+        lang = request.args.get("lang") or request.cookies.get("lang")
+        if lang in translations:
+            return lang
+        return "ru"
 
     @app.context_processor
     def inject_globals() -> dict[str, object]:
+        lang = _resolve_language()
         return {
             "ASPECT_RATIOS": ASPECT_RATIOS,
             "RESOLUTIONS": RESOLUTIONS,
             "STATUS_LABELS": STATUS_LABELS,
+        }
+
+    @app.context_processor
+    def inject_localization() -> dict[str, object]:
+        lang = _resolve_language()
+        return {
+            "t": lambda key: translate(key, lang),
+            "current_language": lang,
+            "available_languages": available_languages,
+            "frontend_translations": get_frontend_translations(lang),
+            "frontend_translations_json": dump_translations_json(lang),
         }
 
     @app.route("/")
@@ -250,23 +277,48 @@ def create_app() -> Flask:
         index_file = STATIC_DIR / "index.html"
         if index_file.exists():
             return send_from_directory(STATIC_DIR, "index.html")
-        return render_template("projects.html", page="projects", title="Проекты")
+        lang = _resolve_language()
+        return render_template(
+            "projects.html",
+            page="projects",
+            title=translate("projects.title", lang),
+        )
 
     @app.route("/projects")
     def projects_page() -> object:
-        return render_template("projects.html", page="projects", title="Проекты")
+        lang = _resolve_language()
+        return render_template(
+            "projects.html",
+            page="projects",
+            title=translate("projects.title", lang),
+        )
 
     @app.route("/templates")
     def templates_page() -> object:
-        return render_template("templates.html", page="templates", title="Темплейты")
+        lang = _resolve_language()
+        return render_template(
+            "templates.html",
+            page="templates",
+            title=translate("templates.title", lang),
+        )
 
     @app.route("/assets")
     def assets_page() -> object:
-        return render_template("assets.html", page="assets", title="Ассеты")
+        lang = _resolve_language()
+        return render_template(
+            "assets.html",
+            page="assets",
+            title=translate("assets.title", lang),
+        )
 
     @app.route("/settings")
     def settings_page() -> object:
-        return render_template("settings.html", page="settings", title="Настройки")
+        lang = _resolve_language()
+        return render_template(
+            "settings.html",
+            page="settings",
+            title=translate("settings.title", lang),
+        )
 
     @app.get("/api/status")
     def status() -> object:
@@ -422,7 +474,28 @@ def create_app() -> Flask:
             detail_references=detail_references or _settings.detail_references,
         )
         save_settings(_settings)
-        return jsonify({"message": "Настройки сохранены.", "settings": _settings_payload()})
+        lang = _resolve_language()
+        return jsonify(
+            {
+                "message": translate("js.forms.saved_api", lang),
+                "settings": _settings_payload(),
+            }
+        )
+
+    @app.post("/api/language")
+    def set_language() -> object:
+        payload = _get_request_data()
+        lang = (payload.get("lang") or "").strip()
+        if lang not in translations:
+            return jsonify({"error": "Unsupported language"}), 400
+        response = make_response(jsonify({"lang": lang}))
+        response.set_cookie("lang", lang, max_age=60 * 60 * 24 * 30)
+        return response
+
+    @app.get("/api/i18n")
+    def frontend_i18n() -> object:
+        lang = _resolve_language()
+        return jsonify(get_frontend_translations(lang))
 
     @app.post("/api/channel/videos")
     def fetch_channel_videos() -> object:

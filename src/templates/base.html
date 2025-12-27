@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{ current_language }}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ title or "Gemini Sheet Builder" }}</title>
+    <title>{{ title or t("app.title") }}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
     <style>
       body { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
@@ -30,21 +30,33 @@
     <aside>
       <div class="stack">
         <div>
-          <p class="muted">Навигация</p>
-          <h2 style="margin-bottom: 0">Gemini UI</h2>
+          <p class="muted">{{ t("app.navigation") }}</p>
+          <h2 style="margin-bottom: 0">{{ t("app.brand") }}</h2>
         </div>
         <nav class="stack">
-          <a class="nav-link" data-route="projects" href="{{ url_for('projects_page') }}">Проекты</a>
-          <a class="nav-link" data-route="templates" href="{{ url_for('templates_page') }}">Темплейты</a>
-          <a class="nav-link" data-route="assets" href="{{ url_for('assets_page') }}">Ассеты</a>
-          <a class="nav-link" data-route="settings" href="{{ url_for('settings_page') }}">Настройки</a>
+          <a class="nav-link" data-route="projects" href="{{ url_for('projects_page') }}">{{ t("nav.projects") }}</a>
+          <a class="nav-link" data-route="templates" href="{{ url_for('templates_page') }}">{{ t("nav.templates") }}</a>
+          <a class="nav-link" data-route="assets" href="{{ url_for('assets_page') }}">{{ t("nav.assets") }}</a>
+          <a class="nav-link" data-route="settings" href="{{ url_for('settings_page') }}">{{ t("nav.settings") }}</a>
         </nav>
-        <p class="muted" style="font-size: 0.9rem">SPA/MPA-заглушка: реальные API доступны под /api/*</p>
+        <form id="language-switcher" class="stack" style="gap: 0.35rem">
+          <label style="font-size: 0.9rem">{{ t("app.language") }}</label>
+          <select name="lang" aria-label="{{ t('app.language') }}">
+            {% for lang in available_languages %}
+              <option value="{{ lang }}" {% if lang == current_language %}selected{% endif %}>{{ lang|upper }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        <p class="muted" style="font-size: 0.9rem">{{ t("app.nav_hint") }}</p>
       </div>
     </aside>
     <main>
       {% block content %}{% endblock %}
     </main>
+    <script>
+      window.APP_LANG = "{{ current_language }}";
+      window.I18N = {{ frontend_translations_json | safe }};
+    </script>
     <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
   </body>
 </html>
