@@ -3,924 +3,602 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Gemini Sheet Builder — Веб</title>
+    <title>Project Navigator</title>
     <style>
       :root {
         color-scheme: light;
         font-family: "Inter", system-ui, -apple-system, sans-serif;
-        background: #f3f4f6;
+        background: #f6f8fb;
       }
+      * { box-sizing: border-box; }
       body {
         margin: 0;
-        padding: 0 24px 48px;
+        background: linear-gradient(180deg, #f6f8fb 0%, #eef2f7 60%, #e6ecf4 100%);
         color: #0f172a;
+        min-height: 100vh;
       }
-      h1 {
-        font-size: 32px;
-        margin: 24px 0 8px;
+      .layout {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: 0;
+        min-height: 100vh;
       }
-      p.subtitle {
-        margin-top: 0;
+      .sidebar {
+        background: #ffffff;
+        padding: 20px 16px;
+        border-right: 1px solid #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+      }
+      .logo {
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #2563eb;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .logo span {
+        display: inline-flex;
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+        background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      }
+      .nav-title {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: #6b7280;
+        text-transform: uppercase;
+        margin: 0 0 8px;
+      }
+      .nav {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .nav a {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        color: #0f172a;
+        text-decoration: none;
+        font-weight: 600;
+        border: 1px solid transparent;
+        transition: all 0.15s ease;
+      }
+      .nav a:hover {
+        background: #eef2ff;
+        border-color: #c7d2fe;
+      }
+      .nav a.active {
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        color: #ffffff;
+        box-shadow: 0 12px 40px rgba(79, 70, 229, 0.15);
+      }
+      .nav .pill {
+        margin-left: auto;
+        background: #e0e7ff;
+        color: #1e3a8a;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .sidebar .footer-note {
+        margin-top: auto;
+        font-size: 12px;
+        color: #6b7280;
+        line-height: 1.5;
+      }
+      .main {
+        padding: 20px 24px 36px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        background: #ffffff;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(6px);
+      }
+      .topbar .breadcrumbs {
         color: #475569;
+        font-weight: 700;
+      }
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .search {
+        position: relative;
+      }
+      .search input {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        color: #0f172a;
+        padding: 10px 12px 10px 34px;
+        border-radius: 12px;
+        min-width: 220px;
+      }
+      .search span {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6b7280;
+      }
+      .icon-btn {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        color: #334155;
+        font-size: 18px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .icon-btn:hover { border-color: #cbd5e1; background: #eef2f7; }
+      .profile {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 14px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+      }
+      .profile img {
+        width: 32px;
+        height: 32px;
+        border-radius: 12px;
+        object-fit: cover;
+      }
+      .content-grid {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 16px;
+        align-items: start;
       }
       .card {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-        padding: 20px;
-        margin-bottom: 20px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        padding: 16px;
+        box-shadow: 0 16px 50px rgba(15, 23, 42, 0.12);
       }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-        gap: 16px;
-      }
-      .history {
-        display: grid;
-        grid-template-columns: 280px 1fr;
-        gap: 16px;
-        align-items: flex-start;
-      }
-      .history .card {
-        margin-bottom: 0;
-      }
+      .card h2 { margin: 0 0 6px; }
+      .card p { margin: 0; color: #475569; }
       label {
         display: block;
-        margin-bottom: 8px;
-        font-weight: 600;
+        font-weight: 700;
+        margin-bottom: 6px;
       }
-      input[type="text"],
-      input[type="password"],
-      select,
-      textarea {
+      input[type="text"], textarea, select {
         width: 100%;
         padding: 10px 12px;
+        border-radius: 12px;
         border: 1px solid #e2e8f0;
-        border-radius: 10px;
+        background: #ffffff;
+        color: #0f172a;
         font-size: 14px;
-        box-sizing: border-box;
       }
-      textarea {
-        resize: vertical;
-      }
-      .row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 12px;
-        margin-bottom: 12px;
-      }
+      textarea { resize: vertical; }
+      .field { margin-bottom: 12px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
       .button {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 6px;
-        padding: 10px 16px;
-        background: linear-gradient(135deg, #2563eb, #4f46e5);
-        color: white;
+        gap: 8px;
+        padding: 12px 16px;
+        border-radius: 12px;
         border: none;
-        border-radius: 10px;
+        color: white;
+        font-weight: 700;
         cursor: pointer;
-        font-weight: 600;
-        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        box-shadow: 0 12px 24px rgba(79, 70, 229, 0.18);
       }
       .button.secondary {
-        background: #e2e8f0;
-        color: #0f172a;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        color: #334155;
         box-shadow: none;
       }
-      .button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-      }
-      .header-actions {
+      .button.full { width: 100%; }
+      .outline {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
+        flex-direction: column;
         gap: 12px;
-        flex-wrap: wrap;
       }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 6px 10px;
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: 600;
-        color: #0f172a;
-        background: #e2e8f0;
-      }
-      .badge.success { background: #dcfce7; color: #166534; }
-      .badge.ready { background: #dcfce7; color: #166534; }
-      .badge.error { background: #fee2e2; color: #991b1b; }
-      .badge.generating { background: #e0f2fe; color: #075985; }
-      .badge.regenerating { background: #ede9fe; color: #5b21b6; }
-      .badge.approved { background: #fef9c3; color: #92400e; }
-      .gen-browser {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-      .gen-list {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      .gen-list button {
-        width: 100%;
-        text-align: left;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid #e2e8f0;
-        background: #f8fafc;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        font-weight: 600;
-        color: #0f172a;
-      }
-      .gen-list button.active {
-        background: linear-gradient(135deg, #2563eb0d, #4f46e510);
-        border-color: #cbd5e1;
-      }
-      .sheet-prompt {
-        background: #f8fafc;
-        border-radius: 10px;
-        padding: 12px;
-        border: 1px dashed #e2e8f0;
-      }
-      .sheet-prompt h4 {
-        margin: 0 0 6px;
-        font-size: 14px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #475569;
-      }
-      .sheet-prompt p {
+      .outline pre {
         margin: 0;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 14px;
         color: #0f172a;
+        min-height: 220px;
+        overflow: auto;
         white-space: pre-wrap;
-        line-height: 1.5;
       }
-      .preview img {
-        width: 100%;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        background: #f8fafc;
-      }
-      .preview-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 10px;
-      }
-      .image-card {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        background: #f8fafc;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        padding: 10px;
-      }
-      .image-card .actions {
-        margin-top: 0;
-      }
-      .preview .placeholder {
-        width: 100%;
-        padding: 32px;
-        text-align: center;
-        color: #94a3b8;
-        border-radius: 12px;
-        border: 1px dashed #cbd5e1;
-        background: #f8fafc;
-      }
-      .preview-grid img {
-        width: 100%;
-        display: block;
-        border-radius: 10px;
-        background: #fff;
-      }
-      .chip-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin: 10px 0;
-      }
-      .chip {
-        padding: 6px 10px;
-        border-radius: 999px;
-        background: #e2e8f0;
-        font-size: 12px;
-        color: #334155;
-      }
-      .reference-chip {
+      .pill {
         display: inline-flex;
         align-items: center;
         gap: 6px;
         padding: 6px 10px;
         border-radius: 999px;
-        background: #e2e8f0;
-        color: #0f172a;
+        font-weight: 700;
+        color: #1f2937;
+        background: linear-gradient(135deg, #e0f2fe, #dbeafe);
         font-size: 12px;
-        text-decoration: none;
       }
-      .reference-chip form {
-        margin: 0;
+      .muted { color: #6b7280; font-size: 13px; }
+      .workspace { display: flex; flex-direction: column; gap: 12px; }
+      .workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .slides { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+      .slide-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
-      .reference-chip button {
-        border: none;
-        background: transparent;
-        cursor: pointer;
+      .slide-card h4 { margin: 0; }
+      .slide-card textarea { min-height: 120px; }
+      .inline-input {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
         color: #0f172a;
         font-weight: 700;
-        padding: 0 2px;
       }
-      .actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-        margin-top: 12px;
-      }
-      .flash {
-        padding: 12px 16px;
-        border-radius: 10px;
-        margin: 10px 0;
-        font-weight: 600;
-      }
-      .flash.success { background: #dcfce7; color: #166534; }
-      .flash.error { background: #fee2e2; color: #991b1b; }
-      .progress {
-        display: flex;
-        flex-direction: column;
+      .list {
+        display: grid;
         gap: 8px;
+        margin: 8px 0 0;
       }
-      .progress-bar {
-        width: 100%;
-        height: 10px;
-        border-radius: 999px;
-        background: #e2e8f0;
-        overflow: hidden;
-      }
-      .progress-bar span {
-        display: block;
-        height: 100%;
-        background: linear-gradient(135deg, #22c55e, #16a34a);
-      }
-      .status-note {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 10px;
-        border-radius: 10px;
+      .list .item {
+        padding: 10px 12px;
         background: #f8fafc;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         color: #0f172a;
       }
-      .hidden-card {
+      .divider { height: 1px; background: #e2e8f0; margin: 6px 0; }
+      .toast {
         display: none;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #d1fae5;
+        color: #065f46;
+        font-weight: 800;
       }
-      .button.full-width {
-        width: 100%;
-        justify-content: center;
+      .toast.visible { display: inline-flex; }
+      .tab-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
       }
-      .status-inline {
+      .tab-bar {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        color: #475569;
-        font-size: 13px;
-      }
-      .live-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #22c55e;
-        display: inline-block;
-        box-shadow: 0 0 0 6px #22c55e22;
-      }
-      .lightbox {
-        position: fixed;
-        inset: 0;
-        background: rgba(15, 23, 42, 0.75);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-        z-index: 30;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s ease;
-      }
-      .lightbox.visible {
-        opacity: 1;
-        pointer-events: all;
-      }
-      .lightbox img {
-        max-width: min(90vw, 1200px);
-        max-height: 90vh;
+        background: #e5e7eb;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
-        box-shadow: 0 20px 80px rgba(0, 0, 0, 0.4);
+        padding: 4px;
+        gap: 6px;
       }
-      .lightbox .close {
-        position: absolute;
-        top: 16px;
-        right: 16px;
-        background: #0f172a;
-        color: white;
+      .tab-bar button {
         border: none;
-        border-radius: 50%;
-        width: 36px;
-        height: 36px;
-        font-size: 18px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        background: transparent;
+        color: #475569;
+        font-weight: 700;
         cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .tab-bar button.active {
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        color: white;
+        box-shadow: 0 10px 24px rgba(79, 70, 229, 0.2);
+      }
+      .tab-content { display: none; }
+      .tab-content.visible { display: block; }
+      @media (max-width: 1040px) {
+        .layout { grid-template-columns: 1fr; }
+        .sidebar { position: static; height: auto; border-right: none; }
+        .content-grid { grid-template-columns: 1fr; }
       }
     </style>
   </head>
   <body>
-    <h1>Генерации Gemini</h1>
-    <p class="subtitle">Разбейте промт на листы, запускайте несколько генераций и отмечайте лучшие.</p>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="logo"><span></span> Navigator</div>
         <div>
-          {% for category, message in messages %}
-            <div class="flash {{ category }}">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
-
-    {% if progress.total %}
-      <div class="card" style="margin-bottom: 12px;">
-        <div class="progress">
-          <div class="header-actions">
-            <div>
-              <div style="font-weight: 700; font-size: 16px;">Прогресс генераций</div>
-              <p style="margin: 4px 0 0; color: #475569;">Готово <span id="progress-completed">{{ progress.completed }}</span> из <span id="progress-total">{{ progress.total }}</span> изображений.</p>
-            </div>
-            {% if progress.active %}
-              <span id="progress-active" class="badge generating">В работе: {{ progress.active }}</span>
-            {% else %}
-              <span id="progress-active" class="badge ready">Очередь свободна</span>
-            {% endif %}
-          </div>
-          <div class="progress-bar">
-            {% set percent = (progress.completed / progress.total * 100) | round(0, 'floor') if progress.total else 0 %}
-            <span id="progress-bar" style="width: {{ percent }}%;"></span>
+          <div class="nav-title">Main</div>
+          <div class="nav">
+            <a href="#" class="active">🏠 Dashboard</a>
+            <a href="#">📂 Projects <span class="pill">5</span></a>
+            <a href="#">🧩 Templates</a>
+            <a href="#">🗂️ Assets</a>
+            <a href="#">⚙️ Settings</a>
           </div>
         </div>
-      </div>
-    {% endif %}
-
-    <form class="card" method="post" action="{{ url_for('update_settings') }}">
-      <div class="header-actions">
+        <div class="divider"></div>
         <div>
-          <h2 style="margin: 0 0 6px;">Настройки</h2>
-          <p style="margin: 0; color: #475569;">API ключ сохраняется и подставляется по умолчанию во все генерации.</p>
-        </div>
-        <button class="button secondary" type="submit">Сохранить настройки</button>
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="saved_api_key">Gemini API key</label>
-          <input id="saved_api_key" name="saved_api_key" type="password" placeholder="Сохранённый GEMINI_API_KEY" value="{{ settings.api_key }}">
-          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Используется по умолчанию, если поле в форме генерации пустое.</p>
-        </div>
-      </div>
-    </form>
-
-    <form class="card" method="post" action="{{ url_for('fetch_channel_videos') }}">
-      <div class="header-actions">
-        <div>
-          <h2 style="margin: 0 0 6px;">Видео по ссылке на канал</h2>
-          <p style="margin: 0; color: #475569;">Список видимых видео без YouTube API: достаточно вставить ссылку на канал.</p>
-        </div>
-        <button class="button secondary" type="submit">Показать видео</button>
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="channel_url">Ссылка на канал YouTube</label>
-          <input id="channel_url" name="channel_url" type="text" placeholder="https://www.youtube.com/@handle или /channel/ID" value="{{ channel_lookup.channel_url }}">
-          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Используется RSS лента, API ключи не нужны.</p>
-        </div>
-      </div>
-
-      {% if channel_lookup.videos %}
-        <div class="row" style="margin-bottom: 0;">
-          <div style="grid-column: 1 / -1;">
-            <div style="display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
-              {% for video in channel_lookup.videos %}
-                <div class="card" style="box-shadow: none; border: 1px solid #e2e8f0; margin: 0;">
-                  <div style="font-weight: 700; margin-bottom: 6px;">{{ video.title }}</div>
-                  <a href="{{ video.url }}" target="_blank" style="color: #2563eb; font-weight: 600; text-decoration: none;">Открыть на YouTube →</a>
-                </div>
-              {% endfor %}
-            </div>
+          <div class="nav-title">Shortcuts</div>
+          <div class="nav">
+            <a href="#">✨ New Brief</a>
+            <a href="#">📑 Export</a>
           </div>
         </div>
-      {% endif %}
-    </form>
-
-    <form class="card" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data">
-      <div class="header-actions">
-        <div>
-          <h2 style="margin: 0 0 6px;">Новая генерация</h2>
-          <p style="margin: 0; color: #475569;">Если оставить поле пустым, подставится сохранённый в настройках API ключ.</p>
-        </div>
-        <button class="button" type="submit" id="start-generation" {% if progress.active %}disabled{% endif %}>Запустить генерацию</button>
-      </div>
-      <div id="form-live-status" class="status-note" style="display: none; margin: 8px 0 0;">
-        ⏳ Генерация запущена. Страница автоматически обновит статус загрузки изображений.
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="api_key">Gemini API key</label>
-          <input id="api_key" name="api_key" type="password" placeholder="GEMINI_API_KEY (опционально)" value="{{ settings.api_key }}">
-        </div>
-        <div>
-          <label for="aspect_ratio">Соотношение сторон</label>
-          <select id="aspect_ratio" name="aspect_ratio">
-            {% for ratio in ASPECT_RATIOS %}
-              <option value="{{ ratio }}">{{ ratio }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label for="resolution">Разрешение</label>
-          <select id="resolution" name="resolution">
-            {% for res in RESOLUTIONS %}
-              <option value="{{ res }}">{{ res }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="background_references">Референсы фона</label>
-          <input id="background_references" name="background_references" type="file" accept="image/*" multiple>
-          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Фоновые или цветовые подсказки, которые применятся ко всем листам.</p>
-        </div>
-        <div>
-          <label for="detail_references">Референсы контента</label>
-          <input id="detail_references" name="detail_references" type="file" accept="image/*" multiple>
-          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Отдельные элементы или стиль для героев и объектов.</p>
-        </div>
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="prompt_yaml">Быстрая загрузка промтов (YAML)</label>
-          <input id="prompt_yaml" name="prompt_yaml" type="file" accept=".yaml,.yml,text/yaml,application/x-yaml">
-          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">Загрузите файл со списком слайдов (ключ <code>slides</code> с полями <code>title</code>/<code>body</code>) или списком строк — промты добавятся в форму автоматически.</p>
-        </div>
-      </div>
-
-      <div id="prompt-blocks" class="grid">
-        <div class="block-field">
-          <label>Промт листа 1</label>
-          <textarea name="sheet_prompts" rows="3" placeholder="Например: общий сеттинг сцены"></textarea>
-        </div>
-        <div class="block-field">
-          <label>Промт листа 2</label>
-          <textarea name="sheet_prompts" rows="3" placeholder="Детали персонажей, света или атмосферы"></textarea>
-        </div>
-      </div>
-      <div style="margin-top: 12px;">
-        <button id="add-block" class="button secondary" type="button">+ Добавить лист</button>
-      </div>
-    </form>
-
-    {% if settings.background_references or settings.detail_references %}
-      <div class="card" style="background: #f8fafc; border: 1px solid #e2e8f0;">
-        <h3 style="margin: 0 0 8px;">Сохранённые референсы</h3>
-        <p style="margin: 0 0 10px; color: #475569;">Будут автоматически подставлены в новую генерацию. Добавьте файлы выше, чтобы обновить список.</p>
-        <div class="row" style="margin-bottom: 0;">
-          {% if settings.background_references %}
-            <div>
-              <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы фона</h4>
-              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                {% for ref in settings.background_references %}
-                  {% set filename = ref.rsplit('/', 1)[-1] %}
-                  <div class="reference-chip">
-                    <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="color: inherit; text-decoration: none;">📎 {{ filename }}</a>
-                    <form method="post" action="{{ url_for('remove_reference') }}">
-                      <input type="hidden" name="reference_type" value="background">
-                      <input type="hidden" name="reference_path" value="{{ ref }}">
-                      <button type="submit" title="Убрать референс">×</button>
-                    </form>
-                  </div>
-                {% endfor %}
-              </div>
-            </div>
-          {% endif %}
-          {% if settings.detail_references %}
-            <div>
-              <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы контента</h4>
-              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                {% for ref in settings.detail_references %}
-                  {% set filename = ref.rsplit('/', 1)[-1] %}
-                  <div class="reference-chip">
-                    <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="color: inherit; text-decoration: none;">📎 {{ filename }}</a>
-                    <form method="post" action="{{ url_for('remove_reference') }}">
-                      <input type="hidden" name="reference_type" value="detail">
-                      <input type="hidden" name="reference_path" value="{{ ref }}">
-                      <button type="submit" title="Убрать референс">×</button>
-                    </form>
-                  </div>
-                {% endfor %}
-              </div>
-            </div>
-          {% endif %}
-        </div>
-      </div>
-    {% endif %}
-
-    <h2 style="margin: 28px 0 12px;">История генераций</h2>
-    {% if generations %}
-      <div class="history">
-        <div class="card gen-browser">
+        <div class="footer-note">Боковая панель ускоряет переход между разделами. Последний проект откроется автоматически.</div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
           <div>
-            <div style="font-weight: 700; font-size: 16px;">Проводник генераций</div>
-            <p style="margin: 4px 0 0; color: #475569;">Выберите нужную генерацию, чтобы быстро перейти к её карточке.</p>
+            <div class="breadcrumbs">Dashboard / Projects / New</div>
+            <div class="muted">Создайте проект, сформируйте YAML-описание и подготовьте слайды.</div>
           </div>
-          <div id="gen-nav" class="gen-list">
-            {% for gen in generations %}
-              <button type="button" data-gen-id="{{ gen.id }}">
-                <span>#{{ gen.id }}</span>
-                <span style="font-size: 12px; color: #475569; display: inline-flex; gap: 6px; align-items: center;">
-                  <span>{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
-                  {% if gen.approved %}<span>★</span>{% endif %}
-                </span>
-              </button>
-            {% endfor %}
+          <div class="top-actions">
+            <div class="search">
+              <span>🔍</span>
+              <input type="text" placeholder="Поиск по проектам" aria-label="Поиск">
+            </div>
+            <button class="icon-btn" title="Уведомления">🔔</button>
+            <div class="profile">
+              <img src="https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=200&q=80" alt="Профиль">
+              <strong>Alex</strong>
+            </div>
           </div>
-          <button id="show-all" class="button secondary full-width" type="button">Показать все</button>
+        </header>
+
+        <div class="content-grid">
+          <section class="card">
+            <div class="pill">Новый проект</div>
+            <h2 style="margin: 8px 0 4px;">Project Setup</h2>
+            <p class="muted">Задайте исходные данные или откройте прошлые проекты.</p>
+            <div class="field">
+              <label for="project-title">Project Title</label>
+              <input id="project-title" type="text" value="NeoCity Revamp" placeholder="Название проекта">
+            </div>
+            <div class="field">
+              <label for="client-name">Client Name</label>
+              <input id="client-name" type="text" value="NovaCorp" placeholder="Имя заказчика">
+            </div>
+            <div class="field">
+              <label for="project-description">Project Description</label>
+              <textarea id="project-description" rows="6" placeholder="Sci-Fi Urban Redevelopment Plan">Sci-Fi Urban Redevelopment Plan — переосмысление городской среды в духе научной фантастики с многоуровневыми сквериками, дронами и мягкой неоновой подсветкой для жителей.</textarea>
+            </div>
+            <div class="field">
+              <label for="project-type">Project Type</label>
+              <select id="project-type">
+                <option>Architecture & Urban Design</option>
+                <option>Product Design</option>
+                <option>Branding & Identity</option>
+                <option>Event Scenario</option>
+              </select>
+            </div>
+            <div class="row">
+              <button class="button" id="generate-outline" type="button">Generate Project Outline</button>
+              <button class="button secondary" type="button">Открыть прошлый проект</button>
+            </div>
+            <div class="divider"></div>
+            <div>
+              <div class="nav-title" style="margin-bottom: 4px;">Recent projects</div>
+              <div class="list">
+                <div class="item"><span>Modular Expo Stand</span> <span class="muted">updated 2d ago</span></div>
+                <div class="item"><span>Eco Resort Visuals</span> <span class="muted">updated 5d ago</span></div>
+                <div class="item"><span>Retail Window Series</span> <span class="muted">updated 1w ago</span></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-shell">
+            <div class="tab-bar">
+              <button class="active" data-tab="outline">Описание</button>
+              <button data-tab="slides">Слайды</button>
+            </div>
+            <div class="tab-content visible" id="tab-outline">
+              <div class="card outline">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                  <div>
+                    <div class="pill">YAML Outline</div>
+                    <h2 style="margin: 8px 0 0;">Сгенерированное описание</h2>
+                    <p class="muted">Описание формируется в YAML и включает блоки для слайдов.</p>
+                  </div>
+                  <div class="toast" id="outline-toast">Outline обновлён</div>
+                </div>
+                <pre id="outline-body"></pre>
+              </div>
+            </div>
+            <div class="tab-content" id="tab-slides">
+              <section class="card workspace" id="workspace">
+                <div class="workspace-header">
+                  <div>
+                    <div class="pill">Project workspace</div>
+                    <h2 style="margin: 8px 0 0;">Слайды проекта</h2>
+                    <p class="muted">Контент по слайдам можно заменять или дополнять.</p>
+                  </div>
+                  <div class="row" style="max-width: 360px;">
+                    <button class="button" id="generate-slides" type="button">Generate all slides</button>
+                    <button class="button secondary" id="add-slide" type="button">+ Добавить слайд</button>
+                  </div>
+                </div>
+                <div class="slides" id="slides-list"></div>
+              </section>
+            </div>
+          </section>
         </div>
-        <div class="grid">
-        {% for gen in generations %}
-          <div class="card generation-card" data-gen-card="{{ gen.id }}" id="generation-{{ gen.id }}">
-            <div class="header-actions">
-              <div>
-                <div style="font-weight: 700; font-size: 16px;">Генерация #{{ gen.id }}</div>
-                <div class="chip-row">
-                  <span class="chip">{{ gen.aspect_ratio }}</span>
-                  <span class="chip">{{ gen.resolution }}</span>
-                  {% if gen.approved %}<span class="chip">★ понравилось</span>{% endif %}
-                </div>
-              </div>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <form method="post" action="{{ url_for('export_pdf_route', generation_id=gen.id) }}">
-                  <button class="button secondary" type="submit" {% if not gen.approved %}disabled{% endif %}>Сделать PDF</button>
-                </form>
-                <span class="badge {{ gen.status }}" data-status-badge>{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
-              </div>
-            </div>
-
-            {% if gen.status in ['generating', 'regenerating'] %}
-              <div class="status-note" style="margin-top: 8px;">
-                🔄 Генерация продолжается — дождитесь завершения, чтобы не запускать лишние запросы.
-              </div>
-            {% endif %}
-
-            {% set ready_count = gen.images | selectattr('status', 'in', ['ready', 'approved']) | list | length %}
-            <div class="status-note" data-gen-progress="{{ gen.id }}" style="margin-top: 8px;">
-              📥 Загружено <strong data-ready-count>{{ ready_count }}</strong> / {{ gen.images|length }} изображений.
-            </div>
-
-            <div class="grid" style="margin-top: 8px;">
-              <div>
-                {% for prompt in gen.sheet_prompts %}
-                    <div class="sheet-prompt">
-                      <h4>Промт листа {{ loop.index }}</h4>
-                      <p>{{ prompt }}</p>
-                    </div>
-                  {% endfor %}
-                {% if gen.background_references %}
-                  <div style="margin-top: 12px;">
-                    <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы фона</h4>
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                      {% for ref in gen.background_references %}
-                        {% set filename = ref.rsplit('/', 1)[-1] %}
-                        <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
-                          📎 {{ filename }}
-                        </a>
-                      {% endfor %}
-                    </div>
-                  </div>
-                {% endif %}
-                {% if gen.detail_references %}
-                  <div style="margin-top: 12px;">
-                    <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы контента</h4>
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                      {% for ref in gen.detail_references %}
-                        {% set filename = ref.rsplit('/', 1)[-1] %}
-                        <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
-                          📎 {{ filename }}
-                        </a>
-                      {% endfor %}
-                    </div>
-                  </div>
-                {% endif %}
-                {% if gen.text_parts %}
-                  <div style="margin-top: 10px;">
-                    <h4 style="margin: 0 0 6px; font-size: 13px;">Текстовые подсказки модели</h4>
-                    <ul style="margin: 0 0 4px 18px; color: #475569;">
-                      {% for text in gen.text_parts %}
-                        <li>{{ text }}</li>
-                      {% endfor %}
-                    </ul>
-                  </div>
-                {% endif %}
-            </div>
-            <div class="preview">
-              {% set images = gen.images %}
-              {% if images %}
-                <div class="preview-grid">
-                  {% for image in images %}
-                    <div class="image-card" data-image-card="{{ image.index }}" data-gen-id="{{ gen.id }}" data-image-status="{{ image.status }}" data-image-approved="{{ 'true' if image.approved else 'false' }}">
-                      <div class="image-visual" data-image-visual data-image-index="{{ image.index }}">
-                        {% if image.exists %}
-                          <img data-preview-img src="{{ url_for('serve_asset', filename=image.asset_name) }}" alt="Результат листа {{ loop.index }}">
-                        {% else %}
-                          <div class="placeholder">Файл {{ image.filename }} не найден. Проверьте путь и перезапустите генерацию.</div>
-                        {% endif %}
-                      </div>
-                      <div class="chip-row">
-                        <span class="chip" data-image-status>{{ STATUS_LABELS.get(image.status, image.status) }}</span>
-                        {% if image.approved %}<span class="chip" data-image-approved>★ понравилось</span>{% endif %}
-                      </div>
-                      <div class="actions">
-                        <form method="post" action="{{ url_for('approve_image', generation_id=gen.id, image_index=image.index) }}">
-                          <button class="button" type="submit" data-action-approve {% if image.approved or image.status != 'ready' or progress.active %}disabled{% endif %}>👍 Апрув</button>
-                        </form>
-                        <form method="post" action="{{ url_for('regenerate_image', generation_id=gen.id, image_index=image.index) }}" style="display: flex; gap: 8px; align-items: center;">
-                          <input name="api_key" type="password" placeholder="API key (опционально)" value="{{ settings.api_key }}" style="width: 180px;">
-                          <button class="button secondary" type="submit" data-action-regenerate {% if image.status in ['generating', 'regenerating', 'pending'] or progress.active %}disabled{% endif %}>↻ Регенерировать</button>
-                        </form>
-                      </div>
-                    </div>
-                  {% endfor %}
-                </div>
-              {% else %}
-                <div class="placeholder">Изображение появится после генерации.</div>
-              {% endif %}
-            </div>
-          </div>
-          </div>
-        {% endfor %}
-      </div>
-      </div>
-    {% else %}
-      <p style="color: #94a3b8;">Пока нет генераций. Добавьте промт и нажмите «Запустить генерацию».</p>
-    {% endif %}
-
-    <div id="lightbox" class="lightbox">
-      <button class="close" type="button" aria-label="Закрыть предпросмотр">×</button>
-      <img id="lightbox-image" src="" alt="Просмотр изображения">
+      </main>
     </div>
 
     <script>
-      const blocksContainer = document.getElementById('prompt-blocks');
-      const addBlockButton = document.getElementById('add-block');
-      const progressBar = document.getElementById('progress-bar');
-      const progressTotal = document.getElementById('progress-total');
-      const progressCompleted = document.getElementById('progress-completed');
-      const progressActive = document.getElementById('progress-active');
-      const generateForm = document.querySelector('form[action="{{ url_for('generate') }}"]');
-      const formLiveStatus = document.getElementById('form-live-status');
-      const startGenerationButton = document.getElementById('start-generation');
-      const lightbox = document.getElementById('lightbox');
-      const lightboxImage = document.getElementById('lightbox-image');
-      const lightboxClose = lightbox?.querySelector('.close');
-      let isQueueBusy = {{ 'true' if progress.active else 'false' }};
+      const outlineBody = document.getElementById('outline-body');
+      const outlineToast = document.getElementById('outline-toast');
+      const workspace = document.getElementById('workspace');
+      const slidesList = document.getElementById('slides-list');
+      const descriptionField = document.getElementById('project-description');
+      const titleField = document.getElementById('project-title');
+      const clientField = document.getElementById('client-name');
+      const typeField = document.getElementById('project-type');
+      const tabButtons = document.querySelectorAll('.tab-bar button');
+      const outlineTab = document.getElementById('tab-outline');
+      const slidesTab = document.getElementById('tab-slides');
 
-      addBlockButton.addEventListener('click', () => {
-        const index = blocksContainer.querySelectorAll('.block-field').length + 1;
-        const wrapper = document.createElement('div');
-        wrapper.className = 'block-field';
-        wrapper.innerHTML = `
-          <label>Промт листа ${index}</label>
-          <textarea name="sheet_prompts" rows="3" placeholder="Дополнительные детали листа"></textarea>
-        `;
-        blocksContainer.appendChild(wrapper);
+      let slidesState = [
+        {
+          title: 'Vision & Context',
+          content: 'Общий взгляд на квартал: смешение неоновых вывесок, транспортных коридоров и зелёных мостиков, подчёркнутая безопасностью среда для жителей.'
+        },
+        {
+          title: 'Key Systems',
+          content: 'Автономные шаттлы, станции зарядки, модули сбора дождевой воды, умные фасады с динамическим светом.'
+        },
+        {
+          title: 'Deliverables',
+          content: '3D мастерплан, серия атмосферных кадров улиц, схема потоков пешеходов и транспорта, гайд по навигации.'
+        }
+      ];
+
+      const buildSlidesFromDescription = (description) => {
+        const base = description || 'Project overview';
+        return [
+          { title: 'Context', content: `${base}: целевые районы, запрос клиента, ограничения среды.` },
+          { title: 'Opportunities', content: 'Сценарии использования пространства, ключевые персонажи, маршруты и впечатления.' },
+          { title: 'Look & Feel', content: 'Материалы, освещение, цветовые акценты, типографика, работа со слоями неона и зелени.' }
+        ];
+      };
+
+      const dataToYAML = (data) => {
+        const indent = (level) => '  '.repeat(level);
+        const lines = [];
+        lines.push(`project_title: ${data.title}`);
+        lines.push(`client: ${data.client}`);
+        lines.push(`type: ${data.type}`);
+        lines.push('description: |');
+        lines.push(`${indent(1)}${data.description}`);
+        lines.push('slides:');
+        data.slides.forEach((slide) => {
+          lines.push(`${indent(1)}- title: ${slide.title}`);
+          lines.push(`${indent(2)}body: |`);
+          slide.content.split('\n').forEach((line) => {
+            lines.push(`${indent(3)}${line}`);
+          });
+        });
+        return lines.join('\n');
+      };
+
+      const renderSlides = () => {
+        slidesList.innerHTML = '';
+        slidesState.forEach((slide, index) => {
+          const card = document.createElement('div');
+          card.className = 'slide-card';
+          card.innerHTML = `
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <input class="inline-input" value="${slide.title}" data-index="${index}" aria-label="Название слайда" />
+              <span class="pill">Слайд ${index + 1}</span>
+            </div>
+            <textarea data-index="${index}" aria-label="Контент слайда">${slide.content}</textarea>
+          `;
+          slidesList.appendChild(card);
+        });
+
+        slidesList.querySelectorAll('input.inline-input').forEach((input) => {
+          input.addEventListener('input', (event) => {
+            const idx = Number(event.target.dataset.index);
+            slidesState[idx].title = event.target.value;
+            updateOutline();
+          });
+        });
+
+        slidesList.querySelectorAll('textarea').forEach((textarea) => {
+          textarea.addEventListener('input', (event) => {
+            const idx = Number(event.target.dataset.index);
+            slidesState[idx].content = event.target.value;
+            updateOutline();
+          });
+        });
+      };
+
+      const updateOutline = () => {
+        const data = {
+          title: titleField.value.trim() || 'Untitled project',
+          client: clientField.value.trim() || 'Client TBD',
+          type: typeField.value,
+          description: descriptionField.value.trim() || 'No description provided',
+          slides: slidesState
+        };
+        outlineBody.textContent = dataToYAML(data);
+        outlineToast.classList.add('visible');
+        setTimeout(() => outlineToast.classList.remove('visible'), 1400);
+      };
+
+      const generateOutline = () => {
+        slidesState = buildSlidesFromDescription(descriptionField.value.trim());
+        renderSlides();
+        updateOutline();
+      };
+
+      document.getElementById('generate-outline').addEventListener('click', generateOutline);
+      document.getElementById('add-slide').addEventListener('click', () => {
+        slidesState.push({ title: `Custom Slide ${slidesState.length + 1}`, content: 'Добавьте контент здесь.' });
+        renderSlides();
+        updateOutline();
       });
 
-      const nav = document.getElementById('gen-nav');
-      const showAllButton = document.getElementById('show-all');
-      const generationCards = Array.from(document.querySelectorAll('[data-gen-card]'));
+      document.getElementById('generate-slides').addEventListener('click', () => {
+        outlineToast.textContent = 'Слайды подготовлены';
+        outlineToast.classList.add('visible');
+        setTimeout(() => outlineToast.classList.remove('visible'), 1400);
+        outlineToast.textContent = 'Outline обновлён';
+      });
 
-      const setActiveGeneration = (id = null) => {
-        const idStr = id ? String(id) : null;
-        generationCards.forEach((card) => {
-          const isActive = !idStr || card.dataset.genCard === idStr;
-          card.classList.toggle('hidden-card', !isActive);
-          if (isActive && idStr) {
-            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      tabButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          tabButtons.forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          const tab = btn.dataset.tab;
+          if (tab === 'outline') {
+            outlineTab.classList.add('visible');
+            slidesTab.classList.remove('visible');
+          } else {
+            outlineTab.classList.remove('visible');
+            slidesTab.classList.add('visible');
           }
-        });
-        if (nav) {
-          nav.querySelectorAll('[data-gen-id]').forEach((button) => {
-            button.classList.toggle('active', idStr === button.dataset.genId);
-          });
-        }
-      };
-
-      if (nav) {
-        nav.addEventListener('click', (event) => {
-          const target = event.target.closest('[data-gen-id]');
-          if (target) {
-            setActiveGeneration(target.dataset.genId);
-          }
-        });
-      }
-
-      if (showAllButton) {
-        showAllButton.addEventListener('click', () => setActiveGeneration(null));
-      }
-
-      const syncImageActions = (card, image) => {
-        const approveButton = card.querySelector('[data-action-approve]');
-        if (approveButton) {
-          approveButton.disabled = isQueueBusy || image.approved || image.status !== 'ready';
-        }
-
-        const regenerateButton = card.querySelector('[data-action-regenerate]');
-        if (regenerateButton) {
-          const isImageBusy = ['generating', 'regenerating', 'pending'].includes(image.status);
-          regenerateButton.disabled = isQueueBusy || isImageBusy;
-        }
-      };
-
-      const setQueueBusy = (busy) => {
-        isQueueBusy = busy;
-        if (startGenerationButton) {
-          startGenerationButton.disabled = busy;
-        }
-        document.querySelectorAll('[data-image-card]').forEach((card) => {
-          const status = card.dataset.imageStatus;
-          const approved = card.dataset.imageApproved === 'true';
-          syncImageActions(card, { status, approved });
-        });
-
-        if (formLiveStatus) {
-          formLiveStatus.style.display = busy ? 'inline-flex' : 'none';
-          if (busy) {
-            formLiveStatus.innerHTML = '<span class="live-dot"></span> Генерация запущена, ждём новые изображения...';
-          }
-        }
-      };
-
-      const setProgress = (progress) => {
-        if (!progress || !progressTotal || !progressCompleted || !progressBar || !progressActive) return;
-        progressTotal.textContent = progress.total ?? 0;
-        progressCompleted.textContent = progress.completed ?? 0;
-        const percent = progress.total ? Math.floor((progress.completed / progress.total) * 100) : 0;
-        progressBar.style.width = `${percent}%`;
-
-        const isBusy = (progress.active ?? 0) > 0;
-        progressActive.textContent = isBusy ? `В работе: ${progress.active}` : 'Очередь свободна';
-        progressActive.className = `badge ${isBusy ? 'generating' : 'ready'}`;
-        setQueueBusy(isBusy);
-      };
-
-      const updateImageCard = (card, image, statusLabels) => {
-        const statusChip = card.querySelector('[data-image-status]');
-        if (statusChip) {
-          statusChip.textContent = statusLabels[image.status] || image.status;
-        }
-
-        card.dataset.imageStatus = image.status;
-        card.dataset.imageApproved = image.approved ? 'true' : 'false';
-
-        const approvedChip = card.querySelector('[data-image-approved]');
-        if (image.approved && !approvedChip) {
-          const chip = document.createElement('span');
-          chip.className = 'chip';
-          chip.dataset.imageApproved = '';
-          chip.textContent = '★ понравилось';
-          card.querySelector('.chip-row')?.appendChild(chip);
-        } else if (!image.approved && approvedChip) {
-          approvedChip.remove();
-        }
-
-        const visual = card.querySelector('[data-image-visual]');
-        if (visual) {
-          if (image.exists && image.asset_url) {
-            let img = visual.querySelector('img');
-            if (!img) {
-              img = document.createElement('img');
-              img.dataset.previewImg = '';
-              img.alt = 'Результат листа';
-              visual.innerHTML = '';
-              visual.appendChild(img);
-            }
-            img.src = image.asset_url;
-            if (!img.dataset.previewBound) {
-              img.dataset.previewBound = 'true';
-              img.addEventListener('click', () => {
-                if (!lightbox || !lightboxImage) return;
-                lightboxImage.src = img.src;
-                lightbox.classList.add('visible');
-              });
-            }
-          }
-        }
-
-        syncImageActions(card, image);
-      };
-
-      const setGenerationProgress = (genId, ready, total) => {
-        const progressNote = document.querySelector(`[data-gen-progress="${genId}"]`);
-        if (progressNote) {
-          progressNote.querySelector('[data-ready-count]').textContent = ready;
-          if (total !== undefined) {
-            progressNote.innerHTML = `📥 Загружено <strong data-ready-count>${ready}</strong> / ${total} изображений.`;
-          }
-        }
-      };
-
-      const updateGenerationCard = (gen, statusLabels) => {
-        const card = document.querySelector(`[data-gen-card="${gen.id}"]`);
-        if (!card) return;
-
-        const badge = card.querySelector('[data-status-badge]');
-        if (badge) {
-          badge.textContent = gen.status_label;
-          badge.className = `badge ${gen.status}`;
-        }
-
-        setGenerationProgress(gen.id, gen.ready, gen.total);
-
-        if (Array.isArray(gen.images)) {
-          gen.images.forEach((image) => {
-            const imageCard = card.querySelector(`[data-image-card="${image.index}"]`);
-            if (imageCard) {
-              updateImageCard(imageCard, image, statusLabels);
-            }
-          });
-        }
-      };
-
-      const fetchStatus = async () => {
-        try {
-          const response = await fetch('/status', { cache: 'no-store' });
-          if (!response.ok) return;
-          const data = await response.json();
-          setProgress(data.progress);
-          if (Array.isArray(data.generations)) {
-            data.generations.forEach((gen) => updateGenerationCard(gen, {{ STATUS_LABELS | tojson }}));
-          }
-        } catch (error) {
-          console.error('Не удалось обновить статус генерации', error);
-        }
-      };
-
-      const startPolling = () => {
-        fetchStatus();
-        setInterval(fetchStatus, 4000);
-      };
-
-      const attachPreviewHandlers = () => {
-        document.querySelectorAll('[data-preview-img]').forEach((img) => {
-          img.addEventListener('click', () => {
-            if (!lightbox || !lightboxImage) return;
-            lightboxImage.src = img.src;
-            lightbox.classList.add('visible');
-          });
-        });
-      };
-
-      attachPreviewHandlers();
-
-      document.querySelectorAll('[data-image-card]').forEach((card) => {
-        syncImageActions(card, {
-          status: card.dataset.imageStatus,
-          approved: card.dataset.imageApproved === 'true',
         });
       });
 
-      setQueueBusy(isQueueBusy);
-
-      if (lightbox && lightboxClose) {
-        lightbox.addEventListener('click', (event) => {
-          if (event.target === lightbox || event.target === lightboxClose) {
-            lightbox.classList.remove('visible');
-          }
-        });
-      }
-
-      if (generateForm && formLiveStatus) {
-        generateForm.addEventListener('submit', () => {
-          setQueueBusy(true);
-        });
-      }
-
-      startPolling();
+      // Init
+      renderSlides();
+      updateOutline();
     </script>
   </body>
 </html>
