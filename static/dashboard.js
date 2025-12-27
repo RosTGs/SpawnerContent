@@ -1,3 +1,21 @@
+const I18N = window.I18N || {};
+
+function t(key, fallback = "") {
+  return key.split(".").reduce((acc, part) => {
+    if (acc && Object.prototype.hasOwnProperty.call(acc, part)) {
+      return acc[part];
+    }
+    return undefined;
+  }, I18N) ?? fallback;
+}
+
+function format(message, values = {}) {
+  return Object.entries(values).reduce(
+    (acc, [name, value]) => acc.replace(new RegExp(`{${name}}`, "g"), value),
+    message,
+  );
+}
+
 function setActiveNav(page) {
   document.querySelectorAll(".nav-link").forEach((link) => {
     const route = link.dataset.route;
@@ -16,7 +34,7 @@ async function fetchJSON(url, options = {}) {
   });
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || "Запрос завершился с ошибкой");
+    throw new Error(payload.error || t("js.misc.error_default", t("common.request_failed")));
   }
   return payload;
 }
@@ -26,20 +44,23 @@ function renderProjects(projects) {
   const counter = document.getElementById("project-counter");
   if (!list) return;
   list.innerHTML = "";
-  counter.textContent = `${projects.length} шт.`;
+  counter.textContent = format(t("js.counters.projects_count", `${projects.length}`), {
+    count: projects.length,
+    suffix: t("common.pieces_suffix", "шт."),
+  });
   projects.forEach((project) => {
     const item = document.createElement("li");
     item.innerHTML = `
       <div class="row" style="justify-content: space-between; align-items: flex-start">
         <div class="stack" style="gap: 0.25rem">
           <strong>${project.name}</strong>
-          <span class="muted">${project.description || "Без описания"}</span>
+          <span class="muted">${project.description || t("common.no_description")}</span>
           <small class="muted">ID: ${project.id}</small>
         </div>
         <div class="stack" style="align-items: flex-end">
           <span class="badge">${project.status}</span>
-          <span class="pill">Шаблонов: ${project.templates}</span>
-          <span class="pill">Ассетов: ${project.assets}</span>
+          <span class="pill">${t("projects.templates_label")}: ${project.templates}</span>
+          <span class="pill">${t("projects.assets_label")}: ${project.assets}</span>
         </div>
       </div>`;
     list.appendChild(item);
@@ -51,16 +72,22 @@ function renderTemplates(templates) {
   const counter = document.getElementById("template-counter");
   if (!list) return;
   list.innerHTML = "";
-  counter.textContent = `${templates.length} шт.`;
+  counter.textContent = format(t("js.counters.templates_count", `${templates.length}`), {
+    count: templates.length,
+    suffix: t("common.items_suffix", "шт."),
+  });
   templates.forEach((tpl) => {
     const item = document.createElement("li");
     item.innerHTML = `
       <div class="row" style="justify-content: space-between; align-items: flex-start">
         <div class="stack" style="gap: 0.25rem">
           <strong>${tpl.name}</strong>
-          <span class="muted">${tpl.category || "Без категории"}</span>
+          <span class="muted">${tpl.category || t("common.no_category")}</span>
         </div>
-        <span class="pill">${tpl.used_by} проектов</span>
+        <span class="pill">${format(
+          t("js.templates.used_by", `${tpl.used_by}`),
+          { count: tpl.used_by },
+        )}</span>
       </div>`;
     list.appendChild(item);
   });
@@ -71,7 +98,10 @@ function renderAssets(assets) {
   const counter = document.getElementById("asset-counter");
   if (!list) return;
   list.innerHTML = "";
-  counter.textContent = `${assets.length} шт.`;
+  counter.textContent = format(t("js.counters.assets_count", `${assets.length}`), {
+    count: assets.length,
+    suffix: t("common.pieces_suffix", "шт."),
+  });
   assets.forEach((asset) => {
     const item = document.createElement("li");
     item.innerHTML = `
@@ -79,11 +109,15 @@ function renderAssets(assets) {
         <div class="stack" style="gap: 0.25rem">
           <strong>${asset.filename}</strong>
           <span class="muted">${asset.kind}</span>
-          <small class="muted">${asset.description || "Без описания"}</small>
+          <small class="muted">${asset.description || t("common.no_description")}</small>
         </div>
         <div class="stack" style="align-items: flex-end">
-          <span class="pill">Размер: ${asset.size}</span>
-          <span class="pill">Проекты: ${asset.project_count}</span>
+          <span class="pill">${format(t("js.assets.size", `${asset.size}`), {
+            size: asset.size,
+          })}</span>
+          <span class="pill">${format(t("js.assets.projects", `${asset.project_count}`), {
+            count: asset.project_count,
+          })}</span>
         </div>
       </div>`;
     list.appendChild(item);
@@ -103,13 +137,21 @@ function renderStatus(status) {
   if (!container) return;
   container.innerHTML = "";
   if (!status) {
-    container.innerHTML = '<p class="muted">Нет данных</p>';
+    container.innerHTML = `<p class="muted">${t("js.misc.no_data", t("common.no_data"))}</p>`;
     return;
   }
   const total = document.createElement("p");
-  total.textContent = `Всего генераций: ${status.progress.total}`;
+  total.textContent = format(t("js.status.total", `${status.progress.total}`), {
+    total: status.progress.total,
+  });
   const completed = document.createElement("p");
-  completed.textContent = `Готово: ${status.progress.completed}, активных: ${status.progress.active}`;
+  completed.textContent = format(
+    t("js.status.completed", `${status.progress.completed}`),
+    {
+      completed: status.progress.completed,
+      active: status.progress.active,
+    },
+  );
   container.append(total, completed);
 }
 
@@ -246,7 +288,25 @@ function hydrate(page) {
   }
 }
 
+function setupLanguageSwitcher() {
+  const form = document.getElementById("language-switcher");
+  if (!form) return;
+  form.addEventListener("change", async (event) => {
+    event.preventDefault();
+    const select = form.querySelector("select[name='lang']");
+    const lang = select?.value;
+    if (!lang) return;
+    try {
+      await fetchJSON("/api/language", { method: "POST", body: JSON.stringify({ lang }) });
+      window.location.reload();
+    } catch (error) {
+      console.error(error);
+    }
+  });
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   const page = document.body.dataset.page;
+  setupLanguageSwitcher();
   hydrate(page);
 });

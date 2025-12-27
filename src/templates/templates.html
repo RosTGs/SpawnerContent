@@ -1,31 +1,31 @@
 {% extends "base.html" %}
 {% block content %}
   <header class="page-head">
-    <p class="muted">Страница</p>
-    <h1>Темплейты</h1>
-    <p class="muted">Управляйте заготовками для генераций и подставляйте их в новые проекты.</p>
+    <p class="muted">{{ t("common.page") }}</p>
+    <h1>{{ t("templates.title") }}</h1>
+    <p class="muted">{{ t("templates.description") }}</p>
   </header>
 
   <section class="card">
-    <h3>Добавить темплейт</h3>
+    <h3>{{ t("templates.add_title") }}</h3>
     <form id="template-form" class="inline">
       <label>
-        Название
-        <input type="text" name="name" placeholder="Карточки для YouTube" required />
+        {{ t("templates.form.name") }}
+        <input type="text" name="name" placeholder="{{ t('templates.form.name_placeholder') }}" required />
       </label>
       <label>
-        Категория
-        <input type="text" name="category" placeholder="social, print..." />
+        {{ t("templates.form.category") }}
+        <input type="text" name="category" placeholder="{{ t('templates.form.category_placeholder') }}" />
       </label>
-      <button type="submit">Создать</button>
+      <button type="submit">{{ t("common.create") }}</button>
     </form>
   </section>
 
   <section class="card">
     <header class="row" style="justify-content: space-between">
       <div>
-        <p class="muted">Коллекция</p>
-        <h3 style="margin: 0">Сохранённые темплейты</h3>
+        <p class="muted">{{ t("common.collection") }}</p>
+        <h3 style="margin: 0">{{ t("common.saved_templates") }}</h3>
       </div>
       <span class="pill" id="template-counter"></span>
     </header>
