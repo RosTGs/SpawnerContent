@@ -10,7 +10,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from flask import Flask, jsonify, request, send_from_directory, url_for
+from flask import (
+    Flask,
+    jsonify,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 import yaml
 from werkzeug.datastructures import FileStorage
 
@@ -173,6 +180,57 @@ _next_generation_id = 1
 _settings: Settings = load_settings()
 _channel_lookup: dict[str, object] | None = None
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+_projects: list[dict[str, object]] = [
+    {
+        "id": 1,
+        "name": "Product launch",
+        "description": "Карточки для лендинга и анонсов",
+        "status": "active",
+        "templates": 3,
+        "assets": 5,
+    },
+    {
+        "id": 2,
+        "name": "YouTube pack",
+        "description": "Оформление канала и превью",
+        "status": "paused",
+        "templates": 2,
+        "assets": 4,
+    },
+]
+_templates: list[dict[str, object]] = [
+    {"id": 1, "name": "Instagram карусели", "category": "social", "used_by": 2},
+    {"id": 2, "name": "YouTube превью", "category": "video", "used_by": 1},
+    {"id": 3, "name": "PDF-презентация", "category": "print", "used_by": 1},
+]
+_assets: list[dict[str, object]] = [
+    {
+        "id": 1,
+        "filename": "brand-kit.png",
+        "kind": "image/png",
+        "size": "240 KB",
+        "description": "Фирменная палитра",
+        "project_count": 3,
+    },
+    {
+        "id": 2,
+        "filename": "hero-photo.jpg",
+        "kind": "image/jpeg",
+        "size": "1.3 MB",
+        "description": "Главный персонаж",
+        "project_count": 2,
+    },
+    {
+        "id": 3,
+        "filename": "bg-texture.svg",
+        "kind": "image/svg+xml",
+        "size": "54 KB",
+        "description": "Универсальный фон",
+        "project_count": 2,
+    },
+]
+_next_project_id = len(_projects) + 1
+_next_template_id = len(_templates) + 1
 
 
 def create_app() -> Flask:
@@ -192,71 +250,83 @@ def create_app() -> Flask:
         index_file = STATIC_DIR / "index.html"
         if index_file.exists():
             return send_from_directory(STATIC_DIR, "index.html")
-        return jsonify(
-            {
-                "message": (
-                    "Фронтенд не собран. Выполните `npm install && npm run build` в каталоге frontend."
-                )
-            }
-        )
+        return render_template("projects.html", page="projects", title="Проекты")
+
+    @app.route("/projects")
+    def projects_page() -> object:
+        return render_template("projects.html", page="projects", title="Проекты")
+
+    @app.route("/templates")
+    def templates_page() -> object:
+        return render_template("templates.html", page="templates", title="Темплейты")
+
+    @app.route("/assets")
+    def assets_page() -> object:
+        return render_template("assets.html", page="assets", title="Ассеты")
+
+    @app.route("/settings")
+    def settings_page() -> object:
+        return render_template("settings.html", page="settings", title="Настройки")
 
     @app.get("/api/status")
     def status() -> object:
-        progress = {
-            "total": len(_generations),
-            "completed": len(
-                [
-                    gen
-                    for gen in _generations
-                    if gen.status in {"ready", "approved"}
-                ]
-            ),
-            "active": len(
-                [
-                    gen
-                    for gen in _generations
-                    if gen.status in {"generating", "regenerating"}
-                ]
-            ),
+        return jsonify(_status_payload())
+
+    @app.get("/api/projects")
+    def api_projects() -> object:
+        return jsonify({"projects": _projects})
+
+    @app.post("/api/projects")
+    def api_create_project() -> object:
+        payload = _get_request_data()
+        name = (payload.get("name") or "").strip()
+        description = (payload.get("description") or "").strip()
+        if not name:
+            return jsonify({"error": "Укажите название проекта"}), 400
+
+        global _next_project_id
+        project = {
+            "id": _next_project_id,
+            "name": name,
+            "description": description,
+            "status": "active",
+            "templates": 0,
+            "assets": 0,
         }
+        _projects.insert(0, project)
+        _next_project_id += 1
+        return jsonify({"message": "Проект сохранён", "project": project})
 
-        def serialize_generation(entry: GenerationEntry) -> dict[str, object]:
-            images: list[dict[str, object]] = []
-            for image in entry.images:
-                images.append(
-                    {
-                        "index": image["index"],
-                        "status": image["status"],
-                        "approved": image["approved"],
-                        "exists": image["exists"],
-                        "asset_url": url_for(
-                            "serve_asset", filename=image["asset_name"]
-                        )
-                        if image["exists"]
-                        else None,
-                        "filename": image["filename"],
-                    }
-                )
+    @app.get("/api/templates")
+    def api_templates() -> object:
+        return jsonify({"templates": _templates})
 
-            ready_count = len(
-                [img for img in images if img["status"] in {"ready", "approved"}]
-            )
-            return {
-                "id": entry.id,
-                "status": entry.status,
-                "status_label": STATUS_LABELS.get(entry.status, entry.status),
-                "approved": entry.approved,
-                "ready": ready_count,
-                "total": len(entry.sheet_prompts),
-                "images": images,
-            }
+    @app.post("/api/templates")
+    def api_create_template() -> object:
+        payload = _get_request_data()
+        name = (payload.get("name") or "").strip()
+        category = (payload.get("category") or "").strip()
+        if not name:
+            return jsonify({"error": "Укажите название темплейта"}), 400
 
-        return jsonify(
-            {
-                "progress": progress,
-                "generations": [serialize_generation(gen) for gen in _generations],
-            }
-        )
+        global _next_template_id
+        template = {
+            "id": _next_template_id,
+            "name": name,
+            "category": category,
+            "used_by": 0,
+        }
+        _templates.insert(0, template)
+        _next_template_id += 1
+        return jsonify({"message": "Темплейт добавлен", "template": template})
+
+    @app.get("/api/assets")
+    def api_assets() -> object:
+        return jsonify({"assets": _assets})
+
+    @app.get("/api/settings")
+    def api_settings() -> object:
+        return jsonify({"settings": _settings_payload(), "status": _status_payload()})
 
     @app.post("/api/generate")
     def generate() -> object:
@@ -337,14 +407,22 @@ def create_app() -> Flask:
     def update_settings() -> object:
         payload = _get_request_data()
         api_key = (payload.get("saved_api_key") or "").strip()
+        background_references = payload.get("background_references") or []
+        detail_references = payload.get("detail_references") or []
+
+        if isinstance(background_references, str):
+            background_references = [ref.strip() for ref in background_references.split(",") if ref.strip()]
+        if isinstance(detail_references, str):
+            detail_references = [ref.strip() for ref in detail_references.split(",") if ref.strip()]
+
         global _settings
         _settings = Settings(
             api_key=api_key,
-            background_references=_settings.background_references,
-            detail_references=_settings.detail_references,
+            background_references=background_references or _settings.background_references,
+            detail_references=detail_references or _settings.detail_references,
         )
         save_settings(_settings)
-        return jsonify({"message": "Настройки сохранены."})
+        return jsonify({"message": "Настройки сохранены.", "settings": _settings_payload()})
 
     @app.post("/api/channel/videos")
     def fetch_channel_videos() -> object:
@@ -440,6 +518,68 @@ def _get_request_data() -> dict[str, object]:
         data["sheet_prompts"] = sheet_prompts
 
     return data
+
+
+def _status_payload() -> dict[str, object]:
+    progress = {
+        "total": len(_generations),
+        "completed": len(
+            [
+                gen
+                for gen in _generations
+                if gen.status in {"ready", "approved"}
+            ]
+        ),
+        "active": len(
+            [
+                gen
+                for gen in _generations
+                if gen.status in {"generating", "regenerating"}
+            ]
+        ),
+    }
+
+    def serialize_generation(entry: GenerationEntry) -> dict[str, object]:
+        images: list[dict[str, object]] = []
+        for image in entry.images:
+            images.append(
+                {
+                    "index": image["index"],
+                    "status": image["status"],
+                    "approved": image["approved"],
+                    "exists": image["exists"],
+                    "asset_url": url_for("serve_asset", filename=image["asset_name"])
+                    if image["exists"]
+                    else None,
+                    "filename": image["filename"],
+                }
+            )
+
+        ready_count = len(
+            [img for img in images if img["status"] in {"ready", "approved"}]
+        )
+        return {
+            "id": entry.id,
+            "status": entry.status,
+            "status_label": STATUS_LABELS.get(entry.status, entry.status),
+            "approved": entry.approved,
+            "ready": ready_count,
+            "total": len(entry.sheet_prompts),
+            "images": images,
+        }
+
+    return {
+        "progress": progress,
+        "generations": [serialize_generation(gen) for gen in _generations],
+    }
+
+
+def _settings_payload() -> dict[str, object]:
+    return {
+        "api_key": _settings.api_key,
+        "background_references": _settings.background_references,
+        "detail_references": _settings.detail_references,
+    }
 
 
 def _find_generation(generation_id: int) -> Optional[GenerationEntry]:
