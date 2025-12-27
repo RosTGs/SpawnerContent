@@ -24,6 +24,12 @@ ENV/
 *.log
 *.sqlite3
 
+# Node/Vite
+node_modules/
+frontend/node_modules/
+*.vite.config.local
+*.tsbuildinfo
+
 # IDE/editor settings
 .vscode/
 .idea/

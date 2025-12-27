@@ -10,16 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from flask import (
-    Flask,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    send_from_directory,
-    url_for,
-)
+from flask import Flask, jsonify, request, send_from_directory, url_for
 import yaml
 from werkzeug.datastructures import FileStorage
 
@@ -181,10 +172,11 @@ _generations: List[GenerationEntry] = []
 _next_generation_id = 1
 _settings: Settings = load_settings()
 _channel_lookup: dict[str, object] | None = None
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
 
     @app.context_processor
@@ -196,35 +188,19 @@ def create_app() -> Flask:
         }
 
     @app.route("/")
-    def index() -> str:
-        channel_lookup = _channel_lookup or {"videos": [], "channel_url": ""}
-        progress = {
-            "total": len(_generations),
-            "completed": len(
-                [
-                    gen
-                    for gen in _generations
-                    if gen.status in {"ready", "approved"}
-                ]
-            ),
-            "active": len(
-                [
-                    gen
-                    for gen in _generations
-                    if gen.status in {"generating", "regenerating"}
-                ]
-            ),
-        }
-
-        return render_template(
-            "index.html",
-            generations=_generations,
-            progress=progress,
-            settings=_settings,
-            channel_lookup=channel_lookup,
+    def index() -> object:
+        index_file = STATIC_DIR / "index.html"
+        if index_file.exists():
+            return send_from_directory(STATIC_DIR, "index.html")
+        return jsonify(
+            {
+                "message": (
+                    "Фронтенд не собран. Выполните `npm install && npm run build` в каталоге frontend."
+                )
+            }
         )
 
-    @app.get("/status")
+    @app.get("/api/status")
     def status() -> object:
         progress = {
             "total": len(_generations),
@@ -282,30 +258,26 @@ def create_app() -> Flask:
             }
         )
 
-    @app.post("/generate")
-    def generate() -> str:
-        api_key = _resolve_api_key(request.form.get("api_key"))
-        aspect_ratio = request.form.get("aspect_ratio", ASPECT_RATIOS[0])
-        resolution = request.form.get("resolution", RESOLUTIONS[0])
-        sheet_prompts = [block.strip() for block in request.form.getlist("sheet_prompts") if block.strip()]
+    @app.post("/api/generate")
+    def generate() -> object:
+        payload = _get_request_data()
+        api_key = _resolve_api_key(payload.get("api_key"))
+        aspect_ratio = payload.get("aspect_ratio", ASPECT_RATIOS[0])
+        resolution = payload.get("resolution", RESOLUTIONS[0])
+        sheet_prompts = [block.strip() for block in payload.get("sheet_prompts", []) if block.strip()]
 
         yaml_prompts: List[str] = []
         yaml_file = request.files.get("prompt_yaml")
         if yaml_file and yaml_file.filename:
             try:
                 yaml_prompts = _load_yaml_prompts(yaml_file)
-            except ValueError as exc:
-                flash(str(exc), "error")
-                return redirect(url_for("index"))
             except Exception as exc:  # noqa: BLE001
-                flash(f"Не удалось загрузить YAML: {exc}", "error")
-                return redirect(url_for("index"))
+                return jsonify({"error": f"Не удалось загрузить YAML: {exc}"}), 400
 
         sheet_prompts.extend(yaml_prompts)
 
         if not sheet_prompts:
-            flash("Добавьте хотя бы один промт листа для генерации.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Добавьте хотя бы один промт листа для генерации."}), 400
 
         background_refs = _save_reference_uploads(
             request.files.getlist("background_references"),
@@ -331,8 +303,7 @@ def create_app() -> Flask:
             save_settings(_settings)
 
         if not api_key:
-            flash("Укажите Gemini API ключ в настройках или в форме перед запуском генерации.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Укажите Gemini API ключ в настройках или в запросе перед запуском генерации."}), 400
 
         entry = _register_generation(
             sheet_prompts=sheet_prompts,
@@ -342,31 +313,30 @@ def create_app() -> Flask:
             detail_references=merged_detail_refs,
         )
         _run_generation(entry, api_key)
-        return redirect(url_for("index"))
+        return jsonify({"message": "Генерация запущена", "generation_id": entry.id})
 
-    @app.post("/regenerate/<int:generation_id>/image/<int:image_index>")
-    def regenerate_image(generation_id: int, image_index: int) -> str:
-        api_key = _resolve_api_key(request.form.get("api_key"))
+    @app.post("/api/generations/<int:generation_id>/images/<int:image_index>/regenerate")
+    def regenerate_image(generation_id: int, image_index: int) -> object:
+        payload = _get_request_data()
+        api_key = _resolve_api_key(payload.get("api_key"))
         entry = _find_generation(generation_id)
         if not entry:
-            flash("Не удалось найти указанную генерацию.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Не удалось найти указанную генерацию."}), 404
         _ensure_image_lists(entry)
         if image_index < 0 or image_index >= len(entry.sheet_prompts):
-            flash("Некорректный номер изображения для регенерации.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Некорректный номер изображения для регенерации."}), 400
 
         if not api_key:
-            flash("Добавьте Gemini API ключ, чтобы перегенерировать изображение.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Добавьте Gemini API ключ, чтобы перегенерировать изображение."}), 400
         entry.image_approvals[image_index] = False
         entry.image_statuses[image_index] = "regenerating"
         _run_generation(entry, api_key, target_index=image_index)
-        return redirect(url_for("index"))
+        return jsonify({"message": "Регенерация запущена"})
 
-    @app.post("/settings")
-    def update_settings() -> str:
-        api_key = (request.form.get("saved_api_key") or "").strip()
+    @app.post("/api/settings")
+    def update_settings() -> object:
+        payload = _get_request_data()
+        api_key = (payload.get("saved_api_key") or "").strip()
         global _settings
         _settings = Settings(
             api_key=api_key,
@@ -374,42 +344,34 @@ def create_app() -> Flask:
             detail_references=_settings.detail_references,
         )
         save_settings(_settings)
-        flash("Настройки сохранены и будут использоваться по умолчанию.", "success")
-        return redirect(url_for("index"))
+        return jsonify({"message": "Настройки сохранены."})
 
-    @app.post("/channel/videos")
-    def fetch_channel_videos() -> str:
-        channel_url = (request.form.get("channel_url") or "").strip()
+    @app.post("/api/channel/videos")
+    def fetch_channel_videos() -> object:
+        payload = _get_request_data()
+        channel_url = (payload.get("channel_url") or "").strip()
         if not channel_url:
-            flash("Добавьте ссылку на канал YouTube для загрузки видео.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Добавьте ссылку на канал YouTube для загрузки видео."}), 400
 
         try:
             videos = _load_channel_videos(channel_url)
         except ValueError as exc:
-            flash(str(exc), "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": str(exc)}), 400
         except Exception as exc:  # noqa: BLE001
-            flash(f"Не удалось загрузить видео канала: {exc}", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": f"Не удалось загрузить видео канала: {exc}"}), 400
 
         global _channel_lookup
         _channel_lookup = {"videos": videos, "channel_url": channel_url}
+        return jsonify({"videos": videos, "channel_url": channel_url})
 
-        if videos:
-            flash(f"Найдено {len(videos)} видео в открытом доступе.", "success")
-        else:
-            flash("Видео не найдены или канал пуст.", "error")
-        return redirect(url_for("index"))
-
-    @app.post("/settings/reference/remove")
-    def remove_reference() -> str:
-        reference_type = request.form.get("reference_type")
-        reference_path = (request.form.get("reference_path") or "").strip()
+    @app.post("/api/settings/reference/remove")
+    def remove_reference() -> object:
+        payload = _get_request_data()
+        reference_type = payload.get("reference_type")
+        reference_path = (payload.get("reference_path") or "").strip()
 
         if reference_type not in {"background", "detail"} or not reference_path:
-            flash("Не удалось удалить референс: некорректные данные.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Не удалось удалить референс: некорректные данные."}), 400
 
         target_list = (
             _settings.background_references
@@ -418,45 +380,39 @@ def create_app() -> Flask:
         )
 
         if not _remove_reference(reference_path, target_list):
-            flash("Референс не найден среди сохранённых.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Референс не найден среди сохранённых."}), 404
 
         save_settings(_settings)
         _delete_reference_file(reference_path)
-        flash("Референс удалён и больше не будет подставляться.", "success")
-        return redirect(url_for("index"))
+        return jsonify({"message": "Референс удалён."})
 
-    @app.post("/approve/<int:generation_id>/image/<int:image_index>")
-    def approve_image(generation_id: int, image_index: int) -> str:
+    @app.post("/api/generations/<int:generation_id>/images/<int:image_index>/approve")
+    def approve_image(generation_id: int, image_index: int) -> object:
         entry = _find_generation(generation_id)
         if not entry:
-            flash("Не удалось найти указанную генерацию.", "error")
-        else:
-            _ensure_image_lists(entry)
-            if image_index < 0 or image_index >= len(entry.sheet_prompts):
-                flash("Некорректный номер изображения для апрува.", "error")
-            else:
-                entry.image_approvals[image_index] = True
-                entry.recalc_flags()
-                flash("Изображение отмечено как понравившееся.", "success")
-        return redirect(url_for("index"))
+            return jsonify({"error": "Не удалось найти указанную генерацию."}), 404
 
-    @app.post("/export_pdf/<int:generation_id>")
+        _ensure_image_lists(entry)
+        if image_index < 0 or image_index >= len(entry.sheet_prompts):
+            return jsonify({"error": "Некорректный номер изображения для апрува."}), 400
+
+        entry.image_approvals[image_index] = True
+        entry.recalc_flags()
+        return jsonify({"message": "Изображение отмечено как понравившееся."})
+
+    @app.post("/api/generations/<int:generation_id>/export_pdf")
     def export_pdf_route(generation_id: int):
         entry = _find_generation(generation_id)
         if not entry:
-            flash("Не удалось найти указанную генерацию.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Не удалось найти указанную генерацию."}), 404
 
         _ensure_image_lists(entry)
         if not entry.approved:
-            flash("Нужно апрувнуть все изображения, чтобы создать PDF.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Нужно апрувнуть все изображения, чтобы создать PDF."}), 400
 
         valid_paths = [path for path in entry.preferred_pdf_images if path]
         if not valid_paths:
-            flash("Нет изображений для формирования PDF.", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Нет изображений для формирования PDF."}), 400
 
         destination = DEFAULT_OUTPUT_DIR / f"generation-{entry.id}.pdf"
         pdf_path = export_pdf(valid_paths, destination)
@@ -470,6 +426,20 @@ def create_app() -> Flask:
         return send_from_directory(DEFAULT_OUTPUT_DIR, filename)
 
     return app
+
+
+def _get_request_data() -> dict[str, object]:
+    payload = request.get_json(silent=True)
+    data: dict[str, object] = payload if isinstance(payload, dict) else {}
+
+    for key, value in request.form.items():
+        data.setdefault(key, value)
+
+    sheet_prompts = request.form.getlist("sheet_prompts")
+    if sheet_prompts and "sheet_prompts" not in data:
+        data["sheet_prompts"] = sheet_prompts
+
+    return data
 
 
 def _find_generation(generation_id: int) -> Optional[GenerationEntry]:
@@ -597,21 +567,18 @@ def _run_generation(
                 alternate_images=entry.pdf_image_candidates,
             )
         )
-        flash("Изображение готово и добавлено в список.", "success")
     except ValueError as exc:
         if target_index is None:
             entry.image_statuses = ["error"] * len(entry.sheet_prompts)
         else:
             entry.image_statuses[target_index] = "error"
         entry.recalc_flags()
-        flash(str(exc), "error")
     except Exception as exc:  # noqa: BLE001
         if target_index is None:
             entry.image_statuses = ["error"] * len(entry.sheet_prompts)
         else:
             entry.image_statuses[target_index] = "error"
         entry.recalc_flags()
-        flash(f"Ошибка при генерации: {exc}", "error")
 
 
 app = create_app()

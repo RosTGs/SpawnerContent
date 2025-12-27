@@ -1,5 +1,6 @@
 google-genai
 pillow
 flask
+gunicorn
 reportlab
 pyyaml
