@@ -136,12 +136,19 @@ git status --short static
 
        # SPA fallback
        location / {
-           try_files $uri /static/index.html;
+           try_files $uri $uri/ @flask;
+       }
+
+       # Проксируем всё остальное во Flask
+       location @flask {
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_pass http://127.0.0.1:8000;
        }
    }
    ```
 
-После перезапуска Nginx фронтенд будет отдаваться напрямую, а запросы под `/api` и `/assets` уйдут в Flask/Gunicorn. Если вы отдаёте статику из CDN, оставьте Nginx только для `/api` и `/assets`, а `index.html` и `/static/assets/` загрузите в CDN.
+После перезапуска Nginx фронтенд будет отдаваться напрямую, а запросы под `/api` и `/assets` уйдут в Flask/Gunicorn. Если вы отдаёте статику из CDN, то `/` нужно проксировать во Flask (как в блоке `location @flask`) или возвращать `index.html` с CDN; локальный `/static/index.html` не используется.
 
 ## Обновление приложения на сервере
 Инструкция для обновления **SpawnerContent** на рабочем сервере.
