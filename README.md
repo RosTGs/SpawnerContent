@@ -54,7 +54,7 @@ git status --short static
 
 ## Переменные окружения
 
-`.env` лежит рядом с проектом (в корне репозитория/папки деплоя) и подключается в systemd через `EnvironmentFile=` (см. ниже). В Timeweb Cloud это обычно `/srv/websites/spawner/.env` или `/opt/spawner/.env`.
+`.env` лежит рядом с проектом (в корне репозитория/папки деплоя) и подключается в systemd через `EnvironmentFile=` (см. ниже). В Timeweb Cloud это `/srv/websites/spawner/.env`.
 
 | Переменная         | Обязательность | Значение по умолчанию             | Описание |
 | ------------------ | -------------- | ---------------------------------- | -------- |
@@ -77,8 +77,8 @@ git status --short static
 1. **Подготовить окружение**: Ubuntu 22.04+, `python3.11-venv`, Node.js 18+ (удобно через `nvm`), доступ в интернет.
 2. **Забрать код и зависимости**:
    ```bash
-   git clone git@github.com:RosTGs/SpawnerContent.git /srv/miniapps/spawner
-   cd /srv/miniapps/spawner
+   git clone git@github.com:RosTGs/SpawnerContent.git /srv/websites/spawner
+   cd /srv/websites/spawner
    
    python3 -m venv .venv
    source .venv/bin/activate
@@ -101,14 +101,15 @@ git status --short static
    After=network.target
 
    [Service]
-   WorkingDirectory=/opt/spawner
-   EnvironmentFile=/opt/spawner/.env
-   ExecStart=/opt/spawner/.venv/bin/gunicorn -w 2 -b 0.0.0.0:8000 'src.app:create_app()'
+   WorkingDirectory=/srv/websites/spawner
+   EnvironmentFile=/srv/websites/spawner/.env
+   ExecStart=/srv/websites/spawner/.venv/bin/gunicorn -w 2 -b 0.0.0.0:8000 'src.app:create_app()'
    Restart=always
 
    [Install]
    WantedBy=multi-user.target
    ```
+   Рабочий каталог и пути до `.venv`, `static/` и `frontend/` должны совпадать между unit-файлом и конфигурацией nginx (используйте единый корень `/srv/websites/spawner`).
    Затем выполните `systemctl daemon-reload && systemctl enable --now spawner.service`.
 4. **Настроить reverse-proxy/Nginx** (адаптируйте порты под вашу конфигурацию):
    ```nginx
@@ -118,7 +119,7 @@ git status --short static
 
        # Статика SPA из каталога static/
        location /static/ {
-           alias /opt/spawner/static/;
+           alias /srv/websites/spawner/static/;
            try_files $uri $uri/ =404;
        }
 
