@@ -111,14 +111,16 @@ git status --short static
    ```
    Рабочий каталог и пути до `.venv`, `static/` и `frontend/` должны совпадать между unit-файлом и конфигурацией nginx (используйте единый корень `/srv/websites/spawner`).
    Затем выполните `systemctl daemon-reload && systemctl enable --now spawner.service`.
-4. **Настроить reverse-proxy/Nginx** (адаптируйте порты под вашу конфигурацию):
+4. **Настроить reverse-proxy/Nginx** (адаптируйте порты под вашу конфигурацию). Если сайт открыт по HTTPS, убедитесь, что блок
+   `location ^~ /static/` находится внутри server:443 **выше** SPA-фоллбека `location /` — иначе запросы к `/static/assets/*.js`
+   попадут в fallback и браузер получит `index.html` вместо JS (пустой экран). Пример с HTTPS и alias на каталог сборки:
    ```nginx
    server {
        listen 80;
        server_name _;
 
        # Статика SPA из каталога static/
-       location /static/ {
+       location ^~ /static/ {
            alias /srv/websites/spawner/static/;
            try_files $uri $uri/ =404;
        }
