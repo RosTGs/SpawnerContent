@@ -3,6 +3,48 @@ import { useEffect, useMemo, useState } from "react";
 const ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
 const RESOLUTIONS = ["1K", "2K", "4K"];
 
+const apiBases = (() => {
+  const candidates = ["/api"];
+  const baseFromVite = import.meta.env.BASE_URL;
+
+  if (baseFromVite && baseFromVite !== "/" && baseFromVite !== "./") {
+    candidates.push(`${baseFromVite.replace(/\/$/, "")}/api`);
+  }
+
+  return Array.from(new Set(candidates));
+})();
+
+async function requestApi(path, options = {}) {
+  let lastError = null;
+
+  for (const base of apiBases) {
+    const url = `${base}${path}`;
+
+    try {
+      const response = await fetch(url, options);
+      const isJson = response.headers
+        .get("content-type")
+        ?.includes("application/json");
+
+      const payload = isJson ? await response.json() : await response.text();
+
+      if (!response.ok) {
+        const message =
+          typeof payload === "string"
+            ? payload || `HTTP ${response.status}`
+            : payload?.error || `HTTP ${response.status}`;
+        throw new Error(message);
+      }
+
+      return { response, payload };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Не удалось выполнить запрос к API");
+}
+
 function App() {
   const [apiKey, setApiKey] = useState("");
   const [aspectRatio, setAspectRatio] = useState(ASPECT_RATIOS[0]);
@@ -20,13 +62,7 @@ function App() {
 
   const refreshStatus = async () => {
     try {
-      const response = await fetch("/api/status");
-      if (!response.ok) {
-        const fallback = await response.text();
-        throw new Error(fallback || `Не удалось получить статус (HTTP ${response.status})`);
-      }
-
-      const payload = await response.json();
+      const { payload } = await requestApi("/status");
       setStatus(payload);
       setMessage("");
     } catch (error) {
@@ -53,7 +89,7 @@ function App() {
     setMessage("");
 
     try {
-      const response = await fetch("/api/generate", {
+      const { payload } = await requestApi("/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -65,20 +101,6 @@ function App() {
           sheet_prompts: promptList,
         }),
       });
-
-      const payload = response.headers
-        .get("content-type")
-        ?.includes("application/json")
-        ? await response.json()
-        : await response.text();
-
-      if (!response.ok) {
-        const errorMessage =
-          typeof payload === "string"
-            ? payload || "Ошибка запуска генерации"
-            : payload.error || "Ошибка запуска генерации";
-        throw new Error(errorMessage);
-      }
 
       setMessage((payload && payload.message) || "Генерация запущена");
       refreshStatus();
