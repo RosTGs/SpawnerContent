@@ -21,10 +21,16 @@ function App() {
   const refreshStatus = async () => {
     try {
       const response = await fetch("/api/status");
+      if (!response.ok) {
+        const fallback = await response.text();
+        throw new Error(fallback || `Не удалось получить статус (HTTP ${response.status})`);
+      }
+
       const payload = await response.json();
       setStatus(payload);
+      setMessage("");
     } catch (error) {
-      setMessage(`Не удалось получить статус: ${error}`);
+      setMessage(`Не удалось получить статус: ${error.message || error}`);
     }
   };
 
@@ -60,15 +66,24 @@ function App() {
         }),
       });
 
-      const payload = await response.json();
+      const payload = response.headers
+        .get("content-type")
+        ?.includes("application/json")
+        ? await response.json()
+        : await response.text();
+
       if (!response.ok) {
-        throw new Error(payload.error || "Ошибка запуска генерации");
+        const errorMessage =
+          typeof payload === "string"
+            ? payload || "Ошибка запуска генерации"
+            : payload.error || "Ошибка запуска генерации";
+        throw new Error(errorMessage);
       }
 
-      setMessage(payload.message || "Генерация запущена");
+      setMessage((payload && payload.message) || "Генерация запущена");
       refreshStatus();
     } catch (error) {
-      setMessage(error.message);
+      setMessage(error.message || "Неизвестная ошибка");
     } finally {
       setLoading(false);
     }
