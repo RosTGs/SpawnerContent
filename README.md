@@ -7,30 +7,33 @@
 - **SPA фронтенд**: исходники лежат в `frontend/`, сборка создаёт статический bundle в `static/` (можно отдавать через Flask или CDN/объектное хранилище).
 - **Файлы генераций**: изображения и PDF остаются в `output/` (см. `src/storage.py`).
 
-## Установка зависимостей
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -r requirements.txt
-```
+## Запуск локально
+1. **Создать окружение и установить зависимости**:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+   pip install -r requirements.txt
+   ```
 
-### Фронтенд (Node.js)
-```bash
-cd frontend
-npm install
-npm run dev   # локальная разработка
-npm run build # собирает статику в ../static/
-```
+2. **Собрать фронтенд** (нужен Node.js 18+):
+   ```bash
+   cd frontend
+   npm install
+   npm run build  # статика попадёт в ../static/
+   cd ..
+   ```
 
-## Запуск API локально
-```bash
-# после сборки фронтенда
-python -m src.app
-# либо gunicorn для прод-режима
-# gunicorn -w 2 -b 0.0.0.0:8000 'src.app:create_app()'
-```
+3. **Запустить сервер**:
+   ```bash
+   # FLASK_SECRET_KEY обязателен для сессий, GEMINI_API_KEY можно прокидывать в запросах
+   export FLASK_SECRET_KEY=local-secret
+   export GEMINI_API_KEY=<опционально>
+   python -m src.app            # или gunicorn -w 2 -b 0.0.0.0:8000 'src.app:create_app()'
+   ```
 
-Переменные окружения:
+4. **Разработка SPA отдельно**: можно вместо `npm run build` использовать `npm run dev` и настроить proxy в Vite на `localhost:5000` (или порт из `PORT`).
+
+Полезные переменные окружения:
 - `GEMINI_API_KEY` — ключ по умолчанию (можно передавать и в теле запросов).
 - `FLASK_SECRET_KEY` — защита cookies/сессии.
 - `PORT` — список портов через запятую, из которых приложение выберет свободный (например, `PORT="8000,5000"`).
@@ -44,17 +47,18 @@ python -m src.app
 - `POST /api/channel/videos` — загрузка открытых видео YouTube-канала.
 - `POST /api/settings` и `/api/settings/reference/remove` — управление сохранёнными ссылками и ключом.
 
-## Деплой на Timeweb Cloud
-1. **Требования окружения**: Ubuntu 22.04+, `python3.11-venv`, `node` 18+ (`nvm` подойдёт), доступ в интернет для установки зависимостей.
-2. **Клонирование и зависимости**:
+## Деплой на сервер (на примере Timeweb Cloud)
+1. **Подготовить окружение**: Ubuntu 22.04+, `python3.11-venv`, Node.js 18+ (удобно через `nvm`), доступ в интернет.
+2. **Забрать код и зависимости**:
    ```bash
-   git clone <repo-url> && cd SpawnerContent
+   git clone <repo-url> /opt/spawner
+   cd /opt/spawner
    python -m venv .venv && source .venv/bin/activate
    pip install -r requirements.txt
    cd frontend && npm ci && npm run build && cd ..
    ```
-   Сборка положит bundle в `static/`. При желании синхронизируйте содержимое каталога в CDN/хранилище и выставьте `base` в `frontend/vite.config.js` на URL CDN.
-3. **Запуск бэкенда** (systemd unit пример):
+   Bundle ляжет в `static/`. Если статику нужно отдавать через CDN/объектное хранилище, синхронизируйте содержимое каталога `static/` и выставьте `base` в `frontend/vite.config.js` на URL CDN.
+3. **Запустить бэкенд** (пример systemd unit):
    ```ini
    [Unit]
    Description=Gemini Sheet API
@@ -69,8 +73,8 @@ python -m src.app
    [Install]
    WantedBy=multi-user.target
    ```
-   Перезапустите `systemctl daemon-reload && systemctl enable --now spawner.service`.
-4. **Reverse-proxy/Nginx** (порты можно адаптировать под timeweb):
+   Затем выполните `systemctl daemon-reload && systemctl enable --now spawner.service`.
+4. **Настроить reverse-proxy/Nginx** (адаптируйте порты под вашу конфигурацию):
    ```nginx
    server {
        listen 80;
@@ -101,4 +105,4 @@ python -m src.app
    }
    ```
 
-После перезапуска Nginx фронтенд будет отдаваться напрямую, а запросы под `/api` и `/assets` уйдут в Flask/Gunicorn. Если используете CDN, оставьте Nginx только для `/api` и `/assets`, а `index.html` и `/static/assets/` загрузите на CDN.
+После перезапуска Nginx фронтенд будет отдаваться напрямую, а запросы под `/api` и `/assets` уйдут в Flask/Gunicorn. Если вы отдаёте статику из CDN, оставьте Nginx только для `/api` и `/assets`, а `index.html` и `/static/assets/` загрузите в CDN.
