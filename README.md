@@ -51,11 +51,18 @@
 1. **Подготовить окружение**: Ubuntu 22.04+, `python3.11-venv`, Node.js 18+ (удобно через `nvm`), доступ в интернет.
 2. **Забрать код и зависимости**:
    ```bash
-   git clone <repo-url> /opt/spawner
-   cd /opt/spawner
-   python -m venv .venv && source .venv/bin/activate
+   git clone git@github.com:RosTGs/SpawnerContent.git /srv/miniapps/spawner
+   cd /srv/miniapps/spawner
+   
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -U pip
    pip install -r requirements.txt
-   cd frontend && npm ci && npm run build && cd ..
+   
+   cd frontend
+   npm ci
+   npm run build
+   cd ..
    ```
    Bundle ляжет в `static/`. Если статику нужно отдавать через CDN/объектное хранилище, синхронизируйте содержимое каталога `static/` и выставьте `base` в `frontend/vite.config.js` на URL CDN.
 3. **Запустить бэкенд** (пример systemd unit):
