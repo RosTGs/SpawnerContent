@@ -144,6 +144,10 @@ p.muted {
   gap: 8px;
 }
 
+.section-head h2 {
+  margin-bottom: 4px;
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -234,6 +238,64 @@ button:not(:disabled):active {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
+}
+
+.examples {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.examples-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.example-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.example-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 12px;
+  padding: 12px 14px;
+  min-height: 120px;
+  color: #0b1021;
+  overflow: hidden;
+}
+
+.example-preview .badge {
+  background: rgba(255, 255, 255, 0.86);
+  color: #0b1021;
+  border: none;
+}
+
+.preview-icon {
+  font-size: 28px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #0b1021;
+  padding: 10px 12px;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.example-body h3 {
+  margin: 0 0 4px;
+}
+
+.example-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .badge {
