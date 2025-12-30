@@ -11,27 +11,51 @@ const apiBases = (() => {
   return Array.from(new Set(candidates));
 })();
 
+const TEMPLATE_KINDS = [
+  {
+    id: "text",
+    title: "Текстовый шаблон",
+    helper: "Скрытые промты и текстовые заготовки для генерации",
+    contentLabel: "Скрытый промт или текст",
+    placeholder: "Например: расскажи про героя в стиле синопсиса, выдели ключевой конфликт",
+  },
+  {
+    id: "background",
+    title: "Шаблон фона",
+    helper: "Описание референсов или бэкграунда, которые нужно сохранить",
+    contentLabel: "Описание фона",
+    placeholder: "Например: холодный космос, звёздное небо, неоновые вывески",
+  },
+  {
+    id: "layout",
+    title: "Шаблон расположения",
+    helper: "Композиции и сетки для размещения контента",
+    contentLabel: "Описание сетки/композиции",
+    placeholder: "Например: две колонки, слева иллюстрация, справа текст и кнопка",
+  },
+];
+
 const mockTemplates = [
   {
     id: "hero-banner",
-    name: "Hero Banner",
-    goal: "Шапка лендинга с CTA",
-    tags: ["web", "promo"],
-    description: "Главный экран для продуктового лендинга с иллюстрацией и кнопкой действия.",
+    name: "Герой лендинга",
+    kind: "layout",
+    description: "Шапка с CTA, крупным заголовком и кнопкой действия",
+    content: "Сетка 60/40: слева иллюстрация, справа текст + две кнопки",
   },
   {
-    id: "product-card",
-    name: "Карточка товара",
-    goal: "Универсальный блок каталога",
-    tags: ["ecommerce", "ui"],
-    description: "Компонент с фото, ценой, рейтингом и быстрыми действиями.",
+    id: "ambient-space",
+    name: "Космический фон",
+    kind: "background",
+    description: "Футуристичный фон с мягким свечением",
+    content: "Глубокий синий, фиолетовые прожилки, мягкое неоновое свечение",
   },
   {
-    id: "email-template",
-    name: "Письмо-напоминание",
-    goal: "Email о возвращении в продукт",
-    tags: ["email", "retention"],
-    description: "Письмо с персонализацией, блоком выгоды и кнопкой возврата в сервис.",
+    id: "reminder-email",
+    name: "Промт письма",
+    kind: "text",
+    description: "Тонкое письмо-напоминание",
+    content: "Пиши дружелюбно, один призыв к действию, выдели выгоду возврата",
   },
 ];
 
@@ -64,34 +88,15 @@ async function requestApi(path, options = {}) {
 }
 
 function normalizeTemplate(template) {
-  const normalizedTags = Array.isArray(template?.tags)
-    ? template.tags
-    : typeof template?.tags === "string"
-      ? template.tags
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter(Boolean)
-      : [];
-
   return {
     id: template.id || template.slug || crypto.randomUUID(),
     name: template.name || "Новый шаблон",
-    goal: template.goal || template.purpose || "Цель не указана",
+    kind: template.kind || template.category || "text",
     description: template.description || "Описание не заполнено",
-    tags: normalizedTags,
+    content: template.content || template.prompt || "",
+    author: template.author || "",
+    created_at: template.created_at || "",
   };
-}
-
-function buildTemplateFromText(text) {
-  const trimmed = text.trim();
-
-  return normalizeTemplate({
-    id: `draft-${Date.now()}`,
-    name: trimmed.slice(0, 40) || "Концепт шаблона",
-    goal: "Создано по текстовому описанию",
-    description: trimmed || "Описания пока нет",
-    tags: ["draft", "text"],
-  });
 }
 
 function TemplatesPage() {
@@ -99,15 +104,35 @@ function TemplatesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [generateLoading, setGenerateLoading] = useState(false);
-  const [formData, setFormData] = useState({ name: "", goal: "", description: "", tags: "" });
   const [textPrompt, setTextPrompt] = useState("");
+  const [generateLoading, setGenerateLoading] = useState(false);
+  const [activeKind, setActiveKind] = useState("text");
+
+  const makeEmptyForms = () =>
+    TEMPLATE_KINDS.reduce(
+      (acc, kind) => ({
+        ...acc,
+        [kind.id]: { name: "", description: "", content: "" },
+      }),
+      {},
+    );
+
+  const [forms, setForms] = useState(makeEmptyForms);
 
   const sortedTemplates = useMemo(
-    () => [...templates].sort((left, right) => left.name.localeCompare(right.name)),
+    () =>
+      [...templates].sort((left, right) => {
+        if (left.kind === right.kind) {
+          return left.name.localeCompare(right.name);
+        }
+        return left.kind.localeCompare(right.kind);
+      }),
     [templates],
+  );
+
+  const filteredTemplates = useMemo(
+    () => sortedTemplates.filter((template) => template.kind === activeKind),
+    [sortedTemplates, activeKind],
   );
 
   useEffect(() => {
@@ -131,25 +156,33 @@ function TemplatesPage() {
     }
   };
 
-  const updateField = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const updateField = (kind, field, value) => {
+    setForms((prev) => ({
+      ...prev,
+      [kind]: {
+        ...prev[kind],
+        [field]: value,
+      },
+    }));
   };
 
-  const submitTemplate = async (event) => {
+  const submitTemplate = async (event, kind) => {
     event.preventDefault();
-    setCreating(true);
     setError("");
     setInfo("");
 
     const payload = {
-      name: formData.name.trim(),
-      goal: formData.goal.trim(),
-      description: formData.description.trim(),
-      tags: formData.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      name: forms[kind].name.trim(),
+      description: forms[kind].description.trim(),
+      content: forms[kind].content.trim(),
+      kind,
+      category: kind,
     };
+
+    if (!payload.name || !payload.content) {
+      setError("Заполните название и содержание шаблона");
+      return;
+    }
 
     try {
       const { payload: responsePayload } = await requestApi("/templates", {
@@ -162,16 +195,12 @@ function TemplatesPage() {
 
       const created = normalizeTemplate(responsePayload?.template || responsePayload || payload);
       setTemplates((prev) => [created, ...prev]);
-      setDialogOpen(false);
-      setFormData({ name: "", goal: "", description: "", tags: "" });
+      setForms(makeEmptyForms());
       setInfo("Шаблон сохранён");
     } catch (apiError) {
       const mockTemplate = normalizeTemplate({ ...payload, id: `mock-${Date.now()}` });
       setTemplates((prev) => [mockTemplate, ...prev]);
       setError(`Не удалось сохранить шаблон: ${apiError.message || apiError}. Добавлен мок.`);
-      setDialogOpen(false);
-    } finally {
-      setCreating(false);
     }
   };
 
@@ -184,12 +213,18 @@ function TemplatesPage() {
     setInfo("");
 
     try {
-      const { payload } = await requestApi("/templates/generate", {
+      const { payload } = await requestApi("/templates", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ description: textPrompt.trim() }),
+        body: JSON.stringify({
+          name: `Текстовый шаблон ${new Date().toLocaleTimeString()}`,
+          description: "Создано по текстовому описанию",
+          content: textPrompt.trim(),
+          kind: "text",
+          category: "text",
+        }),
       });
 
       const generated = normalizeTemplate(payload?.template || payload);
@@ -197,7 +232,13 @@ function TemplatesPage() {
       setTextPrompt("");
       setInfo("Шаблон создан по описанию");
     } catch (apiError) {
-      const draft = buildTemplateFromText(textPrompt);
+      const draft = normalizeTemplate({
+        id: `draft-${Date.now()}`,
+        name: textPrompt.slice(0, 40) || "Черновик шаблона",
+        kind: "text",
+        description: "Создан локально",
+        content: textPrompt,
+      });
       setTemplates((prev) => [draft, ...prev]);
       setError(`Не удалось вызвать генерацию: ${apiError.message || apiError}. Добавлен черновик.`);
       setTextPrompt("");
@@ -226,28 +267,76 @@ function TemplatesPage() {
         <header className="section-head">
           <div>
             <p className="eyebrow">Шаблоны</p>
-            <h1>Галерея шаблонов</h1>
+            <h1>Каталог шаблонов</h1>
             <p className="muted">
-              Управляйте набором макетов: следите за названиями, назначением и тегами, создавайте
-              шаблоны по текстовым описаниям.
+              Добавляйте и сохраняйте текстовые промты, стили фонов и схемы расположения контента. Все
+              элементы сохраняются на сервере так же, как и ассеты.
             </p>
           </div>
-          <button className="primary" onClick={() => setDialogOpen(true)}>
-            + Создать шаблон
+          <button className="ghost" onClick={loadTemplates} disabled={loading}>
+            Обновить
           </button>
         </header>
         {(error || info) && <p className="status">{error || info}</p>}
+
         <div className="grid">
+          {TEMPLATE_KINDS.map((kind) => (
+            <article key={kind.id} className="card">
+              <header className="section-head">
+                <div>
+                  <p className="eyebrow">{kind.title}</p>
+                  <h2>{kind.helper}</h2>
+                </div>
+              </header>
+              <form className="form" onSubmit={(event) => submitTemplate(event, kind.id)}>
+                <label>
+                  Название
+                  <input
+                    name={`name-${kind.id}`}
+                    placeholder="Как вы будете находить этот шаблон"
+                    value={forms[kind.id].name}
+                    onChange={(event) => updateField(kind.id, "name", event.target.value)}
+                  />
+                </label>
+                <label>
+                  {kind.contentLabel}
+                  <textarea
+                    name={`content-${kind.id}`}
+                    rows={3}
+                    placeholder={kind.placeholder}
+                    value={forms[kind.id].content}
+                    onChange={(event) => updateField(kind.id, "content", event.target.value)}
+                  />
+                </label>
+                <label>
+                  Описание
+                  <textarea
+                    name={`description-${kind.id}`}
+                    rows={2}
+                    placeholder="Коротко поясните, где применять шаблон"
+                    value={forms[kind.id].description}
+                    onChange={(event) => updateField(kind.id, "description", event.target.value)}
+                  />
+                </label>
+                <div className="actions">
+                  <button type="reset" className="ghost" onClick={() => setForms(makeEmptyForms())}>
+                    Очистить
+                  </button>
+                  <button type="submit" className="primary" disabled={!forms[kind.id].name.trim() || !forms[kind.id].content.trim()}>
+                    Сохранить
+                  </button>
+                </div>
+              </form>
+            </article>
+          ))}
+
           <article className="card">
             <header className="section-head">
               <div>
-                <p className="eyebrow">Описание → Генерация</p>
-                <h2>Текстовое описание</h2>
-                <p className="muted">Передайте краткое ТЗ, и шаблон будет создан или добавлен как черновик.</p>
+                <p className="eyebrow">Описание → Шаблон</p>
+                <h2>Сгенерировать текстовый</h2>
+                <p className="muted">Краткое ТЗ превратится в текстовый шаблон со скрытым промтом.</p>
               </div>
-              <button className="ghost" onClick={loadTemplates} disabled={loading}>
-                Обновить
-              </button>
             </header>
             <form className="form" onSubmit={generateFromText}>
               <label>
@@ -255,7 +344,7 @@ function TemplatesPage() {
                 <textarea
                   name="description"
                   rows={3}
-                  placeholder="Например: карточка мероприятия с постером, датой и CTA"
+                  placeholder="Например: письмо с приветствием, напомнить об акции, одна кнопка"
                   value={textPrompt}
                   onChange={(event) => setTextPrompt(event.target.value)}
                   required
@@ -278,47 +367,52 @@ function TemplatesPage() {
         <header className="section-head">
           <div>
             <p className="eyebrow">Список</p>
-            <h2>Таблица шаблонов</h2>
-            <p className="muted">Название, назначение и теги для быстрого поиска.</p>
+            <h2>Шаблоны по категориям</h2>
+            <p className="muted">Выберите категорию, чтобы увидеть и удалить сохранённые элементы.</p>
           </div>
-          <span className="muted">Всего: {templates.length}</span>
+          <div className="filters">
+            {TEMPLATE_KINDS.map((kind) => (
+              <button
+                key={kind.id}
+                className={activeKind === kind.id ? "tag active" : "tag"}
+                type="button"
+                onClick={() => setActiveKind(kind.id)}
+              >
+                {kind.title}
+              </button>
+            ))}
+          </div>
         </header>
 
         {loading ? (
           <p className="muted">Загружаем шаблоны...</p>
-        ) : templates.length ? (
+        ) : filteredTemplates.length ? (
           <div className="table-wrapper">
             <table className="table templates-table">
               <thead>
                 <tr>
                   <th>Название</th>
-                  <th>Цель</th>
-                  <th>Теги</th>
+                  <th>Описание</th>
+                  <th>Содержимое</th>
                   <th className="right">Действия</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedTemplates.map((template) => (
+                {filteredTemplates.map((template) => (
                   <tr key={template.id}>
                     <td>
                       <div className="template-title">
                         <span className="eyebrow">{template.id}</span>
                         <div className="template-name">{template.name}</div>
-                        <p className="muted">{template.description}</p>
+                        <p className="muted">Тип: {template.kind}</p>
                       </div>
                     </td>
-                    <td>{template.goal}</td>
+                    <td>{template.description}</td>
                     <td>
-                      {template.tags?.length ? (
-                        <div className="tag-row">
-                          {template.tags.map((tag) => (
-                            <span key={`${template.id}-${tag}`} className="tag">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
+                      {template.content ? (
+                        <div className="template-content">{template.content}</div>
                       ) : (
-                        <span className="muted">Теги не заданы</span>
+                        <span className="muted">Нет содержимого</span>
                       )}
                     </td>
                     <td className="right">
@@ -334,79 +428,9 @@ function TemplatesPage() {
             </table>
           </div>
         ) : (
-          <p className="muted">Пока нет шаблонов. Добавьте описание или создайте новый вручную.</p>
+          <p className="muted">Пока нет шаблонов в этой категории. Добавьте новый выше.</p>
         )}
       </section>
-
-      {dialogOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setDialogOpen(false)}>
-          <div className="card modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-            <header className="section-head">
-              <div>
-                <p className="eyebrow">Новый шаблон</p>
-                <h2>Создание вручную</h2>
-              </div>
-              <button className="ghost" onClick={() => setDialogOpen(false)} aria-label="Закрыть">
-                ✕
-              </button>
-            </header>
-
-            <form className="form" onSubmit={submitTemplate}>
-              <label>
-                Название
-                <input
-                  name="name"
-                  required
-                  placeholder="Например, Шаблон тизера"
-                  value={formData.name}
-                  onChange={(event) => updateField("name", event.target.value)}
-                />
-              </label>
-
-              <label>
-                Цель
-                <input
-                  name="goal"
-                  required
-                  placeholder="Где и зачем используется шаблон"
-                  value={formData.goal}
-                  onChange={(event) => updateField("goal", event.target.value)}
-                />
-              </label>
-
-              <label>
-                Описание
-                <textarea
-                  name="description"
-                  rows={3}
-                  placeholder="Коротко опишите структуру шаблона"
-                  value={formData.description}
-                  onChange={(event) => updateField("description", event.target.value)}
-                />
-              </label>
-
-              <label>
-                Теги
-                <input
-                  name="tags"
-                  placeholder="Например: promo, ui, marketplace"
-                  value={formData.tags}
-                  onChange={(event) => updateField("tags", event.target.value)}
-                />
-              </label>
-
-              <div className="actions">
-                <button type="button" className="ghost" onClick={() => setDialogOpen(false)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary" disabled={creating || !formData.name.trim() || !formData.goal.trim()}>
-                  {creating ? "Сохраняем..." : "Создать"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 }
