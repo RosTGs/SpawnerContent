@@ -412,6 +412,51 @@ button:not(:disabled):active {
   gap: 8px;
 }
 
+.table-wrapper {
+  width: 100%;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.table thead {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.table th,
+.table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th.right,
+.table td.right {
+  text-align: right;
+}
+
+.templates-table td:first-child {
+  min-width: 260px;
+}
+
+.template-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.template-name {
+  font-weight: 700;
+  font-size: 16px;
+}
+
 @media (max-width: 960px) {
   .hero {
     grid-template-columns: 1fr;
