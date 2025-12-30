@@ -153,6 +153,50 @@ git status --short static
 
 После перезапуска Nginx фронтенд будет отдаваться напрямую, а запросы под `/api` и `/assets` уйдут в Flask/Gunicorn. Если вы отдаёте статику из CDN, то `/` нужно проксировать во Flask (как в блоке `location @flask`) или возвращать `index.html` с CDN; локальный `/static/index.html` не используется.
 
+### Пример боевой конфигурации nginx (Timeweb Cloud)
+
+На боевом домене `app3.rostislavmusienko.ru` белый экран получался из‑за неверной раздачи статики. Рабочий конфиг приведён ниже — он принудительно редиректит на HTTPS, отдаёт SPA из заранее собранного каталога `static/`, а API проксирует в gunicorn на `127.0.0.1:8000`:
+
+```nginx
+server {
+    listen 80;
+    server_name app3.rostislavmusienko.ru;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name app3.rostislavmusienko.ru;
+
+    ssl_certificate /etc/letsencrypt/live/app3.rostislavmusienko.ru/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/app3.rostislavmusienko.ru/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Frontend (Vite)
+    location ^~ /static/ {
+        alias /srv/websites/spawner/static/;
+        try_files $uri $uri/ =404;
+        expires 7d;
+    }
+
+    # Backend API
+    location ^~ /api/ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri /static/index.html;
+    }
+}
+```
+
+Важно: путь `/srv/websites/spawner/static/` должен содержать актуальную сборку из `frontend/`, иначе браузер увидит пустую страницу.
+
 ## Обновление приложения на сервере
 Инструкция для обновления **SpawnerContent** на рабочем сервере.
 
