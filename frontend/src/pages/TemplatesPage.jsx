@@ -1,37 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
-
-const apiBases = (() => {
-  const candidates = ["/api"];
-  const baseFromVite = import.meta.env.BASE_URL;
-
-  if (baseFromVite && baseFromVite !== "/" && baseFromVite !== "./") {
-    candidates.push(`${baseFromVite.replace(/\/$/, "")}/api`);
-  }
-
-  return Array.from(new Set(candidates));
-})();
+import { requestApi } from "../api/client";
 
 const TEMPLATE_KINDS = [
   {
     id: "text",
     title: "Текстовый шаблон",
-    helper: "Скрытые промты и текстовые заготовки для генерации",
-    contentLabel: "Скрытый промт или текст",
-    placeholder: "Например: расскажи про героя в стиле синопсиса, выдели ключевой конфликт",
+    helper: "Текстовые заготовки для генерации",
+    contentLabel: "Текст шаблона",
+    placeholder: "Например: описание героя, конфликт и нужный формат", 
+    requiresFile: false,
   },
   {
     id: "background",
-    title: "Шаблон фона",
-    helper: "Описание референсов или бэкграунда, которые нужно сохранить",
-    contentLabel: "Описание фона",
-    placeholder: "Например: холодный космос, звёздное небо, неоновые вывески",
+    title: "Фон",
+    helper: "Добавляйте и храните изображения фонов",
+    contentLabel: "Изображение фона",
+    placeholder: "",
+    requiresFile: true,
   },
   {
     id: "layout",
     title: "Шаблон расположения",
-    helper: "Композиции и сетки для размещения контента",
-    contentLabel: "Описание сетки/композиции",
-    placeholder: "Например: две колонки, слева иллюстрация, справа текст и кнопка",
+    helper: "Сетки и композиции как изображения",
+    contentLabel: "Изображение расположения",
+    placeholder: "",
+    requiresFile: true,
   },
 ];
 
@@ -41,14 +34,16 @@ const mockTemplates = [
     name: "Герой лендинга",
     kind: "layout",
     description: "Шапка с CTA, крупным заголовком и кнопкой действия",
-    content: "Сетка 60/40: слева иллюстрация, справа текст + две кнопки",
+    content: "",
+    asset_url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
   },
   {
     id: "ambient-space",
     name: "Космический фон",
     kind: "background",
     description: "Футуристичный фон с мягким свечением",
-    content: "Глубокий синий, фиолетовые прожилки, мягкое неоновое свечение",
+    content: "",
+    asset_url: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
   },
   {
     id: "reminder-email",
@@ -59,34 +54,6 @@ const mockTemplates = [
   },
 ];
 
-async function requestApi(path, options = {}) {
-  let lastError = null;
-
-  for (const base of apiBases) {
-    const url = `${base}${path}`;
-
-    try {
-      const response = await fetch(url, options);
-      const isJson = response.headers.get("content-type")?.includes("application/json");
-      const payload = isJson ? await response.json() : await response.text();
-
-      if (!response.ok) {
-        const message =
-          typeof payload === "string"
-            ? payload || `HTTP ${response.status}`
-            : payload?.error || `HTTP ${response.status}`;
-        throw new Error(message);
-      }
-
-      return { response, payload };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError || new Error("Не удалось выполнить запрос к API");
-}
-
 function normalizeTemplate(template) {
   return {
     id: template.id || template.slug || crypto.randomUUID(),
@@ -96,6 +63,7 @@ function normalizeTemplate(template) {
     content: template.content || template.prompt || "",
     author: template.author || "",
     created_at: template.created_at || "",
+    assetUrl: template.asset_url || template.assetUrl || "",
   };
 }
 
@@ -112,7 +80,7 @@ function TemplatesPage() {
     TEMPLATE_KINDS.reduce(
       (acc, kind) => ({
         ...acc,
-        [kind.id]: { name: "", description: "", content: "" },
+        [kind.id]: { name: "", description: "", content: "", file: null, preview: "" },
       }),
       {},
     );
@@ -121,11 +89,10 @@ function TemplatesPage() {
 
   const sortedTemplates = useMemo(
     () =>
-      [...templates].sort((left, right) => {
-        if (left.kind === right.kind) {
-          return left.name.localeCompare(right.name);
-        }
-        return left.kind.localeCompare(right.kind);
+      [...templates].sort((a, b) => {
+        const left = a.created_at || a.id;
+        const right = b.created_at || b.id;
+        return String(right).localeCompare(String(left));
       }),
     [templates],
   );
@@ -166,6 +133,21 @@ function TemplatesPage() {
     }));
   };
 
+  const handleFileChange = (kind, file) => {
+    if (!file) {
+      updateField(kind, "file", null);
+      updateField(kind, "preview", "");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateField(kind, "preview", reader.result || "");
+    };
+    reader.readAsDataURL(file);
+    updateField(kind, "file", file);
+  };
+
   const submitTemplate = async (event, kind) => {
     event.preventDefault();
     setError("");
@@ -179,21 +161,47 @@ function TemplatesPage() {
       category: kind,
     };
 
-    if (!payload.name || !payload.content) {
-      setError("Заполните название и содержание шаблона");
+    if (!payload.name) {
+      setError("Заполните название шаблона");
+      return;
+    }
+
+    if (kind === "text" && !payload.content) {
+      setError("Добавьте текст для шаблона");
+      return;
+    }
+
+    if (kind !== "text" && !forms[kind].file) {
+      setError("Добавьте изображение для этого шаблона");
       return;
     }
 
     try {
-      const { payload: responsePayload } = await requestApi("/templates", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      let created;
+      if (kind === "text") {
+        const { payload: responsePayload } = await requestApi("/templates", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        created = normalizeTemplate(responsePayload?.template || responsePayload || payload);
+      } else {
+        const formData = new FormData();
+        formData.append("name", payload.name);
+        formData.append("description", payload.description);
+        formData.append("kind", kind);
+        formData.append("category", kind);
+        formData.append("file", forms[kind].file);
 
-      const created = normalizeTemplate(responsePayload?.template || responsePayload || payload);
+        const { payload: responsePayload } = await requestApi("/templates", {
+          method: "POST",
+          body: formData,
+        });
+        created = normalizeTemplate(responsePayload?.template || responsePayload || payload);
+      }
+
       setTemplates((prev) => [created, ...prev]);
       setForms(makeEmptyForms());
       setInfo("Шаблон сохранён");
@@ -269,8 +277,8 @@ function TemplatesPage() {
             <p className="eyebrow">Шаблоны</p>
             <h1>Каталог шаблонов</h1>
             <p className="muted">
-              Добавляйте и сохраняйте текстовые промты, стили фонов и схемы расположения контента. Все
-              элементы сохраняются на сервере так же, как и ассеты.
+              Добавляйте и сохраняйте текстовые промты, изображения фонов и схемы расположения контента. Все элементы
+              сохраняются на сервере так же, как и ассеты.
             </p>
           </div>
           <button className="ghost" onClick={loadTemplates} disabled={loading}>
@@ -298,16 +306,35 @@ function TemplatesPage() {
                     onChange={(event) => updateField(kind.id, "name", event.target.value)}
                   />
                 </label>
-                <label>
-                  {kind.contentLabel}
-                  <textarea
-                    name={`content-${kind.id}`}
-                    rows={3}
-                    placeholder={kind.placeholder}
-                    value={forms[kind.id].content}
-                    onChange={(event) => updateField(kind.id, "content", event.target.value)}
-                  />
-                </label>
+                {kind.requiresFile ? (
+                  <label>
+                    {kind.contentLabel}
+                    <input
+                      type="file"
+                      name={`file-${kind.id}`}
+                      accept="image/*"
+                      onChange={(event) => handleFileChange(kind.id, event.target.files?.[0])}
+                    />
+                    {forms[kind.id].preview && (
+                      <img
+                        src={forms[kind.id].preview}
+                        alt="Превью шаблона"
+                        style={{ marginTop: "0.5rem", borderRadius: "0.5rem", maxHeight: "180px" }}
+                      />
+                    )}
+                  </label>
+                ) : (
+                  <label>
+                    {kind.contentLabel}
+                    <textarea
+                      name={`content-${kind.id}`}
+                      rows={3}
+                      placeholder={kind.placeholder}
+                      value={forms[kind.id].content}
+                      onChange={(event) => updateField(kind.id, "content", event.target.value)}
+                    />
+                  </label>
+                )}
                 <label>
                   Описание
                   <textarea
@@ -322,7 +349,14 @@ function TemplatesPage() {
                   <button type="reset" className="ghost" onClick={() => setForms(makeEmptyForms())}>
                     Очистить
                   </button>
-                  <button type="submit" className="primary" disabled={!forms[kind.id].name.trim() || !forms[kind.id].content.trim()}>
+                  <button
+                    type="submit"
+                    className="primary"
+                    disabled={
+                      !forms[kind.id].name.trim() ||
+                      (kind.requiresFile ? !forms[kind.id].file : !forms[kind.id].content.trim())
+                    }
+                  >
                     Сохранить
                   </button>
                 </div>
@@ -335,7 +369,7 @@ function TemplatesPage() {
               <div>
                 <p className="eyebrow">Описание → Шаблон</p>
                 <h2>Сгенерировать текстовый</h2>
-                <p className="muted">Краткое ТЗ превратится в текстовый шаблон со скрытым промтом.</p>
+                <p className="muted">Краткое ТЗ превратится в текстовый шаблон.</p>
               </div>
             </header>
             <form className="form" onSubmit={generateFromText}>
@@ -409,10 +443,20 @@ function TemplatesPage() {
                     </td>
                     <td>{template.description}</td>
                     <td>
-                      {template.content ? (
-                        <div className="template-content">{template.content}</div>
+                      {template.kind === "text" ? (
+                        template.content ? (
+                          <div className="template-content">{template.content}</div>
+                        ) : (
+                          <span className="muted">Нет содержимого</span>
+                        )
+                      ) : template.assetUrl || template.content ? (
+                        <img
+                          src={template.assetUrl || template.content}
+                          alt={template.name}
+                          style={{ maxHeight: "120px", borderRadius: "0.5rem" }}
+                        />
                       ) : (
-                        <span className="muted">Нет содержимого</span>
+                        <span className="muted">Нет изображения</span>
                       )}
                     </td>
                     <td className="right">

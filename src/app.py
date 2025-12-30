@@ -260,7 +260,7 @@ def _serialize_project(project: ProjectRecord) -> dict[str, object]:
 
 
 def _serialize_template(template: TemplateRecord) -> dict[str, object]:
-    return {
+    payload = {
         "id": template.id,
         "name": template.name,
         "kind": template.kind,
@@ -274,9 +274,15 @@ def _serialize_template(template: TemplateRecord) -> dict[str, object]:
         "used_by": template.used_by,
     }
 
+    asset_url = _asset_url_for_path(template.content)
+    if template.kind in {"background", "layout"} and asset_url:
+        payload["asset_url"] = asset_url
+
+    return payload
+
 
 def _serialize_asset(asset: AssetRecord) -> dict[str, object]:
-    return {
+    payload = {
         "id": asset.id,
         "filename": asset.filename,
         "kind": asset.kind,
@@ -290,6 +296,12 @@ def _serialize_asset(asset: AssetRecord) -> dict[str, object]:
         "path": asset.path,
     }
 
+    asset_url = _asset_url_for_path(asset.path)
+    if asset_url:
+        payload["asset_url"] = asset_url
+
+    return payload
+
 
 def _parse_ids(raw_value: object) -> list[int]:
     if isinstance(raw_value, list):
@@ -297,6 +309,19 @@ def _parse_ids(raw_value: object) -> list[int]:
     if isinstance(raw_value, str):
         return [int(item) for item in raw_value.split(",") if item.strip().isdigit()]
     return []
+
+
+def _asset_url_for_path(path_value: str | None) -> str | None:
+    if not path_value:
+        return None
+
+    path = Path(path_value)
+    if not path.is_absolute():
+        path = DEFAULT_OUTPUT_DIR / path.name
+
+    if path.name:
+        return url_for("serve_asset", filename=path.name)
+    return None
 
 
 _sync_relations()
@@ -476,6 +501,7 @@ def create_app() -> Flask:
     @app.post("/api/templates")
     def api_create_template() -> object:
         payload = _get_request_data()
+        upload = request.files.get("file")
         name = (payload.get("name") or "").strip()
         kind = (payload.get("kind") or "text").strip().lower()
         if kind not in TEMPLATE_KINDS:
@@ -487,6 +513,14 @@ def create_app() -> Flask:
         author = (payload.get("author") or "").strip()
         if not name:
             return jsonify({"error": "Укажите название темплейта"}), 400
+
+        saved_path: Path | None = None
+        if kind in {"background", "layout"}:
+            if upload and upload.filename:
+                saved_path = save_uploaded_file(upload, prefix=name, root=DEFAULT_OUTPUT_DIR)
+                content = saved_path.as_posix()
+            elif not content:
+                return jsonify({"error": "Добавьте изображение для шаблона"}), 400
 
         global _next_template_id
         template = TemplateRecord(
@@ -514,6 +548,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Темплейт не найден"}), 404
 
         payload = _get_request_data()
+        upload = request.files.get("file")
         if "kind" in payload:
             kind = str(payload.get("kind") or template.kind).lower()
             if kind not in TEMPLATE_KINDS:
@@ -531,6 +566,10 @@ def create_app() -> Flask:
             template.status = str(payload.get("status") or template.status)
         if "author" in payload:
             template.author = str(payload.get("author") or template.author)
+
+        if upload and upload.filename:
+            saved_path = save_uploaded_file(upload, prefix=template.name, root=DEFAULT_OUTPUT_DIR)
+            template.content = saved_path.as_posix()
 
         template.updated_at = _timestamp()
         _persist_catalogs()
@@ -556,10 +595,7 @@ def create_app() -> Flask:
         _sync_relations()
         assets_payload = []
         for asset in _assets:
-            serialized = _serialize_asset(asset)
-            if asset.path:
-                serialized["asset_url"] = url_for("serve_asset", filename=Path(asset.path).name)
-            assets_payload.append(serialized)
+            assets_payload.append(_serialize_asset(asset))
         return jsonify({"assets": assets_payload})
 
     @app.post("/api/assets")
@@ -602,8 +638,6 @@ def create_app() -> Flask:
         _sync_relations()
         _persist_catalogs()
         serialized = _serialize_asset(asset)
-        if asset.path:
-            serialized["asset_url"] = url_for("serve_asset", filename=Path(asset.path).name)
         return jsonify({"message": "Ассет добавлен", "asset": serialized})
 
     @app.delete("/api/assets/<int:asset_id>")
