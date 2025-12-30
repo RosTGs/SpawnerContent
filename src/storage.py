@@ -231,10 +231,42 @@ def save_assets(assets: List[AssetRecord], path: Path = ASSETS_FILE) -> Path:
     return _save_records(path, [asdict(asset) for asset in assets])
 
 
+def _maybe_downscale_image(path: Path, max_side: int) -> None:
+    """Downscale an image in place if its bigger side exceeds the limit.
+
+    The function is intentionally tolerant to errors: if the file is not an
+    image or Pillow cannot process it, the original file is left untouched.
+    """
+
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            bigger_side = max(width, height)
+            if bigger_side <= max_side:
+                return
+
+            scale_factor = max_side / float(bigger_side)
+            new_size = (int(width * scale_factor), int(height * scale_factor))
+            resized = image.resize(new_size, Image.LANCZOS)
+            resized.save(path, optimize=True)
+    except Exception:  # noqa: BLE001
+        # Non-image uploads (or unsupported formats) should remain as-is.
+        return
+
+
 def save_uploaded_file(
-    upload: FileStorage, *, prefix: str, root: Path = DEFAULT_OUTPUT_DIR
+    upload: FileStorage,
+    *,
+    prefix: str,
+    root: Path = DEFAULT_OUTPUT_DIR,
+    max_image_side: int | None = 2000,
 ) -> Path:
-    """Save a user uploaded file inside the output directory."""
+    """Save a user uploaded file inside the output directory.
+
+    If ``max_image_side`` is set, image uploads are downscaled so that their
+    bigger side does not exceed the limit. This keeps heavy templates and
+    персонажи within ~2K resolution while still accepting large source files.
+    """
 
     ensure_output_dir(root)
     sanitized_prefix = prefix.replace(" ", "_")
@@ -242,6 +274,10 @@ def save_uploaded_file(
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     path = root / f"{sanitized_prefix}-{timestamp}-{filename}"
     upload.save(path)
+
+    if max_image_side:
+        _maybe_downscale_image(path, max_image_side)
+
     return path
 
 

@@ -129,10 +129,11 @@ function ProjectsPage() {
   const [templateCatalog, setTemplateCatalog] = useState([]);
   const [assetCatalog, setAssetCatalog] = useState([]);
   const [inputs, setInputs] = useState({
-    templateId: "",
+    templateIds: [],
     assetId: "",
   });
   const [pageLimitMessage, setPageLimitMessage] = useState("");
+  const [templateFilter, setTemplateFilter] = useState("");
 
   const sortedProjects = useMemo(
     () =>
@@ -261,30 +262,49 @@ function ProjectsPage() {
     setInputs((prev) => ({ ...prev, [field]: value }));
   };
 
+  const toggleTemplateSelection = (templateId) => {
+    setInputs((prev) => {
+      const idAsString = String(templateId);
+      const alreadySelected = prev.templateIds.includes(idAsString);
+      return {
+        ...prev,
+        templateIds: alreadySelected
+          ? prev.templateIds.filter((id) => id !== idAsString)
+          : [...prev.templateIds, idAsString],
+      };
+    });
+  };
+
   const addTemplate = (event) => {
     event.preventDefault();
 
-    if (!selectedProject || !inputs.templateId) return;
+    if (!selectedProject || !inputs.templateIds.length) return;
 
-    const template = templateCatalog.find((item) => String(item.id) === inputs.templateId);
-    if (!template) return;
+    const selectedTemplates = templateCatalog.filter((item) =>
+      inputs.templateIds.includes(String(item.id)),
+    );
+    if (!selectedTemplates.length) return;
 
-    updateProjectData(selectedProject.id, (data) => ({
-      ...data,
-      templates: data.templates.some((item) => item.id === template.id)
-        ? data.templates
-        : [
-            {
-              id: template.id,
-              name: template.name,
-              text: template.text,
-              kind: template.kind,
-            },
-            ...data.templates,
-          ],
-    }));
+    updateProjectData(selectedProject.id, (data) => {
+      const existingIds = new Set(data.templates.map((item) => item.id));
+      const prepared = selectedTemplates
+        .filter((template) => !existingIds.has(template.id))
+        .map((template) => ({
+          id: template.id,
+          name: template.name,
+          text: template.text,
+          kind: template.kind,
+          description: template.description,
+          assetUrl: template.assetUrl,
+        }));
 
-    setInputs((prev) => ({ ...prev, templateId: "" }));
+      return {
+        ...data,
+        templates: [...prepared, ...data.templates],
+      };
+    });
+
+    setInputs((prev) => ({ ...prev, templateIds: [] }));
   };
 
   const addAsset = (event) => {
@@ -390,6 +410,8 @@ function ProjectsPage() {
     name: template.name || template.title || "Без названия",
     text: template.description || template.content || "",
     kind: template.kind || "text",
+    description: template.description || "",
+    assetUrl: template.asset_url || template.assetUrl || template.content || "",
   });
 
   const normalizeAsset = (asset) => ({
@@ -418,6 +440,19 @@ function ProjectsPage() {
       });
     }
   };
+
+  const filteredTemplateCatalog = useMemo(() => {
+    if (!templateFilter.trim()) return templateCatalog;
+    const query = templateFilter.trim().toLowerCase();
+    return templateCatalog.filter(
+      (template) => {
+        const name = String(template.name || "").toLowerCase();
+        const text = String(template.text || "").toLowerCase();
+        const kind = String(template.kind || "").toLowerCase();
+        return name.includes(query) || text.includes(query) || kind.includes(query);
+      },
+    );
+  }, [templateCatalog, templateFilter]);
 
   const generatePages = (isRegeneration = false) => {
     if (!selectedProject || !selectedProjectData) return;
@@ -584,7 +619,7 @@ function ProjectsPage() {
                   <div className="section-head">
                     <div>
                       <p className="eyebrow">Шаблоны</p>
-                      <h3>Подключить шаблон с сервера</h3>
+                      <h3>Подключить шаблоны с сервера</h3>
                     </div>
                     <div className={`status-chip ${catalogStatus.state}`} role="status">
                       {catalogStatus.state === "pending" && "Загружаем каталоги..."}
@@ -595,26 +630,63 @@ function ProjectsPage() {
                   </div>
                   <form className="form" onSubmit={addTemplate}>
                     <label>
-                      Шаблон из библиотеки
-                      <select
-                        value={inputs.templateId}
-                        onChange={(event) => updateInput("templateId", event.target.value)}
-                      >
-                        <option value="">Выберите сохранённый шаблон</option>
-                        {templateCatalog.map((template) => (
-                          <option key={template.id} value={template.id}>
-                            {template.name} · {template.kind}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="muted">Шаблоны берутся из сохранённого каталога на сервере.</p>
+                      Поиск по названию или описанию
+                      <input
+                        type="search"
+                        placeholder="Например: герой, фон, макет"
+                        value={templateFilter}
+                        onChange={(event) => setTemplateFilter(event.target.value)}
+                      />
                     </label>
+                    <p className="muted">
+                      Отметьте несколько шаблонов сразу, чтобы добавить их в проект. Превью карточек помогает
+                      отличать текстовые заготовки и изображения персонажей.
+                    </p>
+                    <div className="template-cards">
+                      {filteredTemplateCatalog.map((template) => {
+                        const isSelected = inputs.templateIds.includes(String(template.id));
+                        const hasImage = template.assetUrl && template.kind !== "text";
+                        return (
+                          <label
+                            key={template.id}
+                            className={`template-card ${isSelected ? "selected" : ""}`}
+                          >
+                            <div className="template-card__header">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleTemplateSelection(template.id)}
+                              />
+                              <div>
+                                <div className="template-card__name">{template.name}</div>
+                                <p className="muted">ID: {template.id} · Тип: {template.kind}</p>
+                              </div>
+                            </div>
+                            {hasImage ? (
+                              <img src={template.assetUrl} alt={template.name} className="template-card__preview" />
+                            ) : template.text ? (
+                              <p className="template-card__text">{template.text}</p>
+                            ) : (
+                              <p className="muted">Нет содержимого</p>
+                            )}
+                            {template.description && (
+                              <p className="muted" style={{ marginTop: "0.5rem" }}>
+                                {template.description}
+                              </p>
+                            )}
+                          </label>
+                        );
+                      })}
+                      {!filteredTemplateCatalog.length && (
+                        <p className="muted">Каталог пуст или ни один шаблон не совпал с поиском.</p>
+                      )}
+                    </div>
                     <div className="actions">
                       <button type="button" className="ghost" onClick={loadCatalogs}>
                         Обновить каталоги
                       </button>
-                      <button type="submit" className="primary" disabled={!inputs.templateId}>
-                        Добавить выбранный шаблон
+                      <button type="submit" className="primary" disabled={!inputs.templateIds.length}>
+                        Добавить выбранные ({inputs.templateIds.length})
                       </button>
                     </div>
                   </form>
