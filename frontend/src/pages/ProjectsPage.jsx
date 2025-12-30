@@ -124,6 +124,7 @@ function ProjectsPage() {
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [projectDetails, setProjectDetails] = useState({});
   const [activeTab, setActiveTab] = useState("content");
+  const [detailOpen, setDetailOpen] = useState(false);
   const [inputs, setInputs] = useState({
     templateName: "",
     templateText: "",
@@ -211,6 +212,7 @@ function ProjectsPage() {
       setProjects((prev) => [created, ...prev]);
       setProjectDetails((prev) => ({ ...prev, [created.id]: createDefaultProjectData() }));
       setSelectedProjectId(created.id);
+      setDetailOpen(true);
       setActiveTab("content");
       setDialogOpen(false);
       setFormData({ name: "", description: "", tags: "" });
@@ -219,6 +221,7 @@ function ProjectsPage() {
       setProjects((prev) => [mockProject, ...prev]);
       setProjectDetails((prev) => ({ ...prev, [mockProject.id]: createDefaultProjectData() }));
       setSelectedProjectId(mockProject.id);
+      setDetailOpen(true);
       setActiveTab("content");
       setError(`Не удалось сохранить проект: ${apiError.message || apiError}. Добавлен мок.`);
       setDialogOpen(false);
@@ -234,6 +237,15 @@ function ProjectsPage() {
       ...prev,
       [projectId]: prev[projectId] || createDefaultProjectData(),
     }));
+  };
+
+  const openProjectWindow = (projectId) => {
+    selectProject(projectId);
+    setDetailOpen(true);
+  };
+
+  const closeProjectWindow = () => {
+    setDetailOpen(false);
   };
 
   const updateProjectData = (projectId, updater) => {
@@ -447,6 +459,19 @@ function ProjectsPage() {
                 ) : (
                   <p className="muted">Теги не заданы</p>
                 )}
+                <div className="card-actions">
+                  <span className="eyebrow">Страницы: {projectDetails[project.id]?.pages?.length || 0}</span>
+                  <button
+                    className="ghost"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openProjectWindow(project.id);
+                    }}
+                  >
+                    Открыть
+                  </button>
+                </div>
                 {selectedProjectId === project.id && <span className="badge badge-success">Активен</span>}
               </article>
             ))}
@@ -456,348 +481,372 @@ function ProjectsPage() {
         )}
       </section>
 
-      {selectedProject && selectedProjectData && (
-        <section className="card project-detail">
-          <header className="section-head">
-            <div>
-              <p className="eyebrow">{selectedProject.name}</p>
-              <h2>Контент и генерация внутри проекта</h2>
-              <p className="muted">
-                Каждый проект хранит свои шаблоны, ассеты и страницы. Генерация привязана к текущему
-                проекту и результаты можно перегенерировать, сохранив старые версии в отдельном
-                стеке.
-              </p>
+
+      {detailOpen && selectedProject && selectedProjectData && (
+        <div className="modal-backdrop" role="presentation" onClick={closeProjectWindow}>
+          <div
+            className="card modal project-window"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="section-head project-window__bar">
+              <div>
+                <p className="eyebrow">{selectedProject.name}</p>
+                <h2>Контент и генерация внутри проекта</h2>
+                <p className="muted">
+                  Каждый проект хранит свои шаблоны, ассеты и страницы. Генерация привязана к текущему
+                  проекту и результаты можно перегенерировать, сохранив старые версии в отдельном
+                  стеке.
+                </p>
+              </div>
+              <div className="actions">
+                <div className="status-chip success">Сохранено локально</div>
+                <button className="ghost" type="button" onClick={closeProjectWindow} aria-label="Закрыть">
+                  Закрыть
+                </button>
+              </div>
+            </header>
+
+            <div className="tab-row">
+              <button
+                className={`pill ${activeTab === "content" ? "pill-active" : ""}`}
+                onClick={() => setActiveTab("content")}
+              >
+                Контент проекта
+              </button>
+              <button
+                className={`pill ${activeTab === "generation" ? "pill-active" : ""}`}
+                onClick={() => setActiveTab("generation")}
+              >
+                Генерация
+              </button>
+              <button
+                className={`pill ${activeTab === "history" ? "pill-active" : ""}`}
+                onClick={() => setActiveTab("history")}
+              >
+                История
+              </button>
             </div>
-            <div className="status-chip success">Сохранено локально</div>
-          </header>
 
-          <div className="tab-row">
-            <button
-              className={`pill ${activeTab === "content" ? "pill-active" : ""}`}
-              onClick={() => setActiveTab("content")}
-            >
-              Контент проекта
-            </button>
-            <button
-              className={`pill ${activeTab === "generation" ? "pill-active" : ""}`}
-              onClick={() => setActiveTab("generation")}
-            >
-              Генерация
-            </button>
-            <button
-              className={`pill ${activeTab === "history" ? "pill-active" : ""}`}
-              onClick={() => setActiveTab("history")}
-            >
-              История
-            </button>
-          </div>
-
-          {activeTab === "content" && (
-            <div className="content-grid">
-              <div className="card muted-surface">
-                <div className="section-head">
-                  <div>
-                    <p className="eyebrow">Шаблоны</p>
-                    <h3>Добавить шаблон</h3>
-                  </div>
-                </div>
-                <form className="form" onSubmit={addTemplate}>
-                  <label>
-                    Название шаблона
-                    <input
-                      placeholder="Например, Карточка персонажа"
-                      value={inputs.templateName}
-                      onChange={(event) => updateInput("templateName", event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Содержимое
-                    <textarea
-                      rows={3}
-                      placeholder="Описание структуры страницы или требования к наполнению"
-                      value={inputs.templateText}
-                      onChange={(event) => updateInput("templateText", event.target.value)}
-                    />
-                  </label>
-                  <div className="actions">
-                    <button type="button" className="ghost" onClick={() => setInputs((prev) => ({
-                      ...prev,
-                      templateName: "",
-                      templateText: "",
-                    }))}>
-                      Очистить
-                    </button>
-                    <button type="submit" className="primary" disabled={!inputs.templateName.trim()}>
-                      Сохранить шаблон
-                    </button>
-                  </div>
-                </form>
-                {selectedProjectData.templates.length ? (
-                  <ul className="stack-list">
-                    {selectedProjectData.templates.map((template) => (
-                      <li key={template.id} className="stack-item">
-                        <div>
-                          <p className="template-name">{template.name}</p>
-                          {template.text && <p className="muted">{template.text}</p>}
-                        </div>
-                        <button className="ghost" onClick={() => removeTemplate(template.id)}>
-                          Удалить
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="muted">Пока нет шаблонов. Добавьте первый, чтобы использовать его при генерации.</p>
-                )}
-              </div>
-
-              <div className="card muted-surface">
-                <div className="section-head">
-                  <div>
-                    <p className="eyebrow">Ассеты</p>
-                    <h3>Персонажи и ассеты</h3>
-                  </div>
-                </div>
-                <form className="form" onSubmit={addAsset}>
-                  <label>
-                    Имя или идентификатор
-                    <input
-                      placeholder="Например, Ника — главный герой"
-                      value={inputs.assetName}
-                      onChange={(event) => updateInput("assetName", event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Роль/описание
-                    <input
-                      placeholder="Роль, эмоции, ограничения"
-                      value={inputs.assetRole}
-                      onChange={(event) => updateInput("assetRole", event.target.value)}
-                    />
-                  </label>
-                  <div className="actions">
-                    <button type="button" className="ghost" onClick={() => setInputs((prev) => ({
-                      ...prev,
-                      assetName: "",
-                      assetRole: "",
-                    }))}>
-                      Очистить
-                    </button>
-                    <button type="submit" className="primary" disabled={!inputs.assetName.trim()}>
-                      Добавить ассет
-                    </button>
-                  </div>
-                </form>
-                {selectedProjectData.assets.length ? (
-                  <ul className="stack-list">
-                    {selectedProjectData.assets.map((asset) => (
-                      <li key={asset.id} className="stack-item">
-                        <div>
-                          <p className="template-name">{asset.name}</p>
-                          {asset.role && <p className="muted">{asset.role}</p>}
-                        </div>
-                        <button className="ghost" onClick={() => removeAsset(asset.id)}>
-                          Удалить
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="muted">Добавьте персонажей или ассеты, чтобы использовать их на страницах.</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "content" && (
-            <div className="card muted-surface">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Страницы</p>
-                  <h3>До 101 страницы с индивидуальными настройками</h3>
-                </div>
-                <div className="actions">
-                  <button className="ghost" onClick={resetContent}>Удалить контент</button>
-                  <button className="primary" onClick={addPage}>+ Добавить страницу</button>
-                </div>
-              </div>
-              {pageLimitMessage && <p className="status warning">{pageLimitMessage}</p>}
-              <div className="page-grid">
-                {selectedProjectData.pages.map((page, index) => (
-                  <div key={page.id} className="page-card">
-                    <div className="page-head">
-                      <span className="badge badge-pending">Страница {index + 1}</span>
-                      <button className="ghost" onClick={() => removePage(page.id)} aria-label="Удалить страницу">
-                        ✕
-                      </button>
+            {activeTab === "content" && (
+              <div className="content-grid">
+                <div className="card muted-surface">
+                  <div className="section-head">
+                    <div>
+                      <p className="eyebrow">Шаблоны</p>
+                      <h3>Добавить шаблон</h3>
                     </div>
+                  </div>
+                  <form className="form" onSubmit={addTemplate}>
                     <label>
-                      Заголовок
+                      Название шаблона
                       <input
-                        value={page.title}
-                        onChange={(event) => updatePageField(page.id, "title", event.target.value)}
-                        placeholder="Название страницы"
+                        placeholder="Например, Карточка персонажа"
+                        value={inputs.templateName}
+                        onChange={(event) => updateInput("templateName", event.target.value)}
                       />
                     </label>
                     <label>
-                      Наполнение
+                      Содержимое
                       <textarea
                         rows={3}
-                        value={page.body}
-                        onChange={(event) => updatePageField(page.id, "body", event.target.value)}
-                        placeholder="Текст, сюжет, задания для этой страницы"
+                        placeholder="Описание структуры страницы или требования к наполнению"
+                        value={inputs.templateText}
+                        onChange={(event) => updateInput("templateText", event.target.value)}
+                      />
+                    </label>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => setInputs((prev) => ({ ...prev, templateName: "", templateText: "" }))}
+                      >
+                        Очистить
+                      </button>
+                      <button type="submit" className="primary" disabled={!inputs.templateName.trim()}>
+                        Добавить шаблон
+                      </button>
+                    </div>
+                  </form>
+                  {selectedProjectData.templates.length ? (
+                    <table className="table templates-table">
+                      <thead>
+                        <tr>
+                          <th>Название</th>
+                          <th>Текст</th>
+                          <th className="right">Действия</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedProjectData.templates.map((template) => (
+                          <tr key={template.id}>
+                            <td className="template-title">
+                              <span className="template-name">{template.name}</span>
+                              <span className="eyebrow">ID: {template.id}</span>
+                            </td>
+                            <td className="template-content">{template.text || "—"}</td>
+                            <td className="right">
+                              <button className="ghost" onClick={() => removeTemplate(template.id)}>
+                                Удалить
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="muted">Пока нет шаблонов. Добавьте первый, чтобы использовать его при генерации.</p>
+                  )}
+                </div>
+
+                <div className="card muted-surface">
+                  <div className="section-head">
+                    <div>
+                      <p className="eyebrow">Ассеты</p>
+                      <h3>Персонажи и ассеты</h3>
+                    </div>
+                  </div>
+                  <form className="form" onSubmit={addAsset}>
+                    <label>
+                      Имя или идентификатор
+                      <input
+                        placeholder="Например, Ника — главный герой"
+                        value={inputs.assetName}
+                        onChange={(event) => updateInput("assetName", event.target.value)}
                       />
                     </label>
                     <label>
-                      Ссылка на изображение (1 на страницу)
+                      Роль/описание
                       <input
-                        value={page.image}
-                        onChange={(event) => updatePageField(page.id, "image", event.target.value)}
-                        placeholder="https://..."
+                        placeholder="Роль, эмоции, ограничения"
+                        value={inputs.assetRole}
+                        onChange={(event) => updateInput("assetRole", event.target.value)}
                       />
                     </label>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "generation" && (
-            <div className="card muted-surface">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Генерация внутри проекта</p>
-                  <h3>Генерируйте страницы с учётом шаблонов и ассетов</h3>
-                  <p className="muted">
-                    Все страницы генерируются сразу. При перегенерации предыдущий результат сохраняется
-                    в отдельном стеке для отката.
-                  </p>
-                </div>
-                <div className="status-chip">
-                  {selectedProjectData.statusNote || "Статус не задан"}
-                </div>
-              </div>
-
-              <div className="summary-row">
-                <div className="summary-box">
-                  <p className="eyebrow">Шаблоны</p>
-                  <p className="summary-number">{selectedProjectData.templates.length}</p>
-                  <p className="muted">Подключены к генерации</p>
-                </div>
-                <div className="summary-box">
-                  <p className="eyebrow">Ассеты</p>
-                  <p className="summary-number">{selectedProjectData.assets.length}</p>
-                  <p className="muted">Персонажи и ресурсы</p>
-                </div>
-                <div className="summary-box">
-                  <p className="eyebrow">Страницы</p>
-                  <p className="summary-number">{selectedProjectData.pages.length}</p>
-                  <p className="muted">Каждая с 1 изображением</p>
-                </div>
-              </div>
-
-              <div className="actions">
-                <button className="primary" onClick={() => generatePages(false)}>
-                  Сгенерировать страницы
-                </button>
-                <button
-                  className="ghost"
-                  onClick={() => generatePages(true)}
-                  disabled={!selectedProjectData.generated}
-                >
-                  Перегенерировать
-                </button>
-                <button
-                  className="ghost"
-                  onClick={assemblePdf}
-                  disabled={!selectedProjectData.generated}
-                >
-                  Собрать PDF
-                </button>
-              </div>
-
-              {selectedProjectData.generated ? (
-                <div className="table-wrapper">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Страница</th>
-                        <th>Текст</th>
-                        <th>Изображение</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedProjectData.generated.pages.map((page) => (
-                        <tr key={page.id}>
-                          <td>{page.title || `Страница ${page.index}`}</td>
-                          <td className="muted">{page.body || "Нет описания"}</td>
-                          <td>
-                            {page.image ? (
-                              <a className="link" href={page.image} target="_blank" rel="noreferrer">
-                                Открыть
-                              </a>
-                            ) : (
-                              "Не прикреплено"
-                            )}
-                          </td>
-                        </tr>
+                    <div className="actions">
+                      <button type="button" className="ghost" onClick={() => setInputs((prev) => ({
+                        ...prev,
+                        assetName: "",
+                        assetRole: "",
+                      }))}>
+                        Очистить
+                      </button>
+                      <button type="submit" className="primary" disabled={!inputs.assetName.trim()}>
+                        Добавить ассет
+                      </button>
+                    </div>
+                  </form>
+                  {selectedProjectData.assets.length ? (
+                    <ul className="stack-list">
+                      {selectedProjectData.assets.map((asset) => (
+                        <li key={asset.id} className="stack-item">
+                          <div>
+                            <p className="template-name">{asset.name}</p>
+                            {asset.role && <p className="muted">{asset.role}</p>}
+                          </div>
+                          <button className="ghost" onClick={() => removeAsset(asset.id)}>
+                            Удалить
+                          </button>
+                        </li>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="muted">
-                  Заполните страницы, добавьте шаблоны и ассеты, затем запустите генерацию. Результат
-                  появится здесь и его можно будет перегенерировать.
-                </p>
-              )}
-            </div>
-          )}
-
-          {activeTab === "history" && (
-            <div className="card muted-surface">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">История</p>
-                  <h3>Предыдущие версии и собранные PDF</h3>
+                    </ul>
+                  ) : (
+                    <p className="muted">Добавьте персонажей или ассеты, чтобы использовать их на страницах.</p>
+                  )}
                 </div>
               </div>
+            )}
 
-              {selectedProjectData.archive.length ? (
-                <ul className="stack-list">
-                  {selectedProjectData.archive.map((entry) => (
-                    <li key={entry.id} className="stack-item">
-                      <div>
-                        <p className="template-name">{entry.note || "Генерация"}</p>
-                        <p className="muted">
-                          {entry.pages.length} страниц · сохранено {formatDate(entry.createdAt)}
-                        </p>
-                      </div>
-                      <span className="badge badge-pending">Архив</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted">Пока нет прошлых генераций. После перегенерации предыдущий вариант появится здесь.</p>
-              )}
-
-              {selectedProjectData.pdfVersion ? (
-                <div className="pdf-block">
+            {activeTab === "content" && (
+              <div className="card muted-surface">
+                <div className="section-head">
                   <div>
-                    <p className="eyebrow">PDF</p>
-                    <p className="template-name">Сборка от {formatDate(selectedProjectData.pdfVersion.createdAt)}</p>
-                    <p className="muted">Страниц: {selectedProjectData.pdfVersion.pages}</p>
+                    <p className="eyebrow">Страницы</p>
+                    <h3>До 101 страницы с индивидуальными настройками</h3>
                   </div>
-                  <span className="badge badge-success">Готово</span>
+                  <div className="actions">
+                    <button className="ghost" onClick={resetContent}>Удалить контент</button>
+                    <button className="primary" onClick={addPage}>+ Добавить страницу</button>
+                  </div>
                 </div>
-              ) : (
-                <p className="muted">Нажмите «Собрать PDF» после удачной генерации, чтобы сохранить итоговый документ.</p>
-              )}
-            </div>
-          )}
-        </section>
-      )}
+                {pageLimitMessage && <p className="status warning">{pageLimitMessage}</p>}
+                <div className="page-grid">
+                  {selectedProjectData.pages.map((page, index) => (
+                    <div key={page.id} className="page-card">
+                      <div className="page-head">
+                        <span className="badge badge-pending">Страница {index + 1}</span>
+                        <button className="ghost" onClick={() => removePage(page.id)} aria-label="Удалить страницу">
+                          ✕
+                        </button>
+                      </div>
+                      <label>
+                        Заголовок
+                        <input
+                          value={page.title}
+                          onChange={(event) => updatePageField(page.id, "title", event.target.value)}
+                          placeholder="Название страницы"
+                        />
+                      </label>
+                      <label>
+                        Наполнение
+                        <textarea
+                          rows={3}
+                          value={page.body}
+                          onChange={(event) => updatePageField(page.id, "body", event.target.value)}
+                          placeholder="Текст, сюжет, задания для этой страницы"
+                        />
+                      </label>
+                      <label>
+                        Ссылка на изображение (1 на страницу)
+                        <input
+                          value={page.image}
+                          onChange={(event) => updatePageField(page.id, "image", event.target.value)}
+                          placeholder="https://..."
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
+            {activeTab === "generation" && (
+              <div className="card muted-surface">
+                <div className="section-head">
+                  <div>
+                    <p className="eyebrow">Генерация внутри проекта</p>
+                    <h3>Генерируйте страницы с учётом шаблонов и ассетов</h3>
+                    <p className="muted">
+                      Все страницы генерируются сразу. При перегенерации предыдущий результат сохраняется
+                      в отдельном стеке для отката.
+                    </p>
+                  </div>
+                  <div className="status-chip">
+                    {selectedProjectData.statusNote || "Статус не задан"}
+                  </div>
+                </div>
+
+                <div className="summary-row">
+                  <div className="summary-box">
+                    <p className="eyebrow">Шаблоны</p>
+                    <p className="summary-number">{selectedProjectData.templates.length}</p>
+                    <p className="muted">Подключены к генерации</p>
+                  </div>
+                  <div className="summary-box">
+                    <p className="eyebrow">Ассеты</p>
+                    <p className="summary-number">{selectedProjectData.assets.length}</p>
+                    <p className="muted">Персонажи и ресурсы</p>
+                  </div>
+                  <div className="summary-box">
+                    <p className="eyebrow">Страницы</p>
+                    <p className="summary-number">{selectedProjectData.pages.length}</p>
+                    <p className="muted">Каждая с 1 изображением</p>
+                  </div>
+                </div>
+
+                <div className="actions">
+                  <button className="primary" onClick={() => generatePages(false)}>
+                    Сгенерировать страницы
+                  </button>
+                  <button
+                    className="ghost"
+                    onClick={() => generatePages(true)}
+                    disabled={!selectedProjectData.generated}
+                  >
+                    Перегенерировать
+                  </button>
+                  <button
+                    className="ghost"
+                    onClick={assemblePdf}
+                    disabled={!selectedProjectData.generated}
+                  >
+                    Собрать PDF
+                  </button>
+                </div>
+
+                {selectedProjectData.generated ? (
+                  <div className="table-wrapper">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Страница</th>
+                          <th>Текст</th>
+                          <th>Изображение</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedProjectData.generated.pages.map((page) => (
+                          <tr key={page.id}>
+                            <td>{page.title || `Страница ${page.index}`}</td>
+                            <td className="muted">{page.body || "Нет описания"}</td>
+                            <td>
+                              {page.image ? (
+                                <a className="link" href={page.image} target="_blank" rel="noreferrer">
+                                  Открыть
+                                </a>
+                              ) : (
+                                "Не прикреплено"
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="muted">
+                    Заполните страницы, добавьте шаблоны и ассеты, затем запустите генерацию. Результат
+                    появится здесь и его можно будет перегенерировать.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {activeTab === "history" && (
+              <div className="card muted-surface">
+                <div className="section-head">
+                  <div>
+                    <p className="eyebrow">История</p>
+                    <h3>Предыдущие версии и собранные PDF</h3>
+                  </div>
+                </div>
+
+                {selectedProjectData.archive.length ? (
+                  <ul className="stack-list">
+                    {selectedProjectData.archive.map((entry) => (
+                      <li key={entry.id} className="stack-item">
+                        <div>
+                          <p className="template-name">{entry.note || "Генерация"}</p>
+                          <p className="muted">
+                            {entry.pages.length} страниц · сохранено {formatDate(entry.createdAt)}
+                          </p>
+                        </div>
+                        <span className="badge badge-pending">Архив</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted">Пока нет прошлых генераций. После перегенерации предыдущий вариант появится здесь.</p>
+                )}
+
+                {selectedProjectData.pdfVersion ? (
+                  <div className="pdf-block">
+                    <div>
+                      <p className="eyebrow">PDF</p>
+                      <p className="template-name">Сборка от {formatDate(selectedProjectData.pdfVersion.createdAt)}</p>
+                      <p className="muted">Страниц: {selectedProjectData.pdfVersion.pages}</p>
+                    </div>
+                    <span className="badge badge-success">Готово</span>
+                  </div>
+                ) : (
+                  <p className="muted">Нажмите «Собрать PDF» после удачной генерации, чтобы сохранить итоговый документ.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {dialogOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setDialogOpen(false)}>
           <div className="card modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
