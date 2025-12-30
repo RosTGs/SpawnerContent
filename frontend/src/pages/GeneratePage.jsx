@@ -1,55 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-
-const ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-const RESOLUTIONS = ["1K", "2K", "4K"];
-
-const apiBases = (() => {
-  const candidates = ["/api"];
-  const baseFromVite = import.meta.env.BASE_URL;
-
-  if (baseFromVite && baseFromVite !== "/" && baseFromVite !== "./") {
-    candidates.push(`${baseFromVite.replace(/\/$/, "")}/api`);
-  }
-
-  return Array.from(new Set(candidates));
-})();
-
-async function requestApi(path, options = {}) {
-  let lastError = null;
-
-  for (const base of apiBases) {
-    const url = `${base}${path}`;
-
-    try {
-      const response = await fetch(url, options);
-      const isJson = response.headers
-        .get("content-type")
-        ?.includes("application/json");
-
-      const payload = isJson ? await response.json() : await response.text();
-
-      if (!response.ok) {
-        const message =
-          typeof payload === "string"
-            ? payload || `HTTP ${response.status}`
-            : payload?.error || `HTTP ${response.status}`;
-        throw new Error(message);
-      }
-
-      return { response, payload };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError || new Error("Не удалось выполнить запрос к API");
-}
+import { useSettings } from "../SettingsContext.jsx";
+import { requestApi } from "../api/client.js";
+import { ASPECT_RATIOS, RESOLUTIONS } from "../constants/generation.js";
 
 function GeneratePage() {
-  const [apiKey, setApiKey] = useState("");
-  const [aspectRatio, setAspectRatio] = useState(ASPECT_RATIOS[0]);
-  const [resolution, setResolution] = useState(RESOLUTIONS[0]);
-  const [prompts, setPrompts] = useState([""]);
+  const { settings } = useSettings();
+  const [aspectRatio, setAspectRatio] = useState(settings.defaultAspectRatio || ASPECT_RATIOS[0]);
+  const [resolution, setResolution] = useState(settings.defaultResolution || RESOLUTIONS[0]);
+  const [prompts, setPrompts] = useState([""]); 
   const [status, setStatus] = useState(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -59,6 +17,11 @@ function GeneratePage() {
   useEffect(() => {
     refreshStatus();
   }, []);
+
+  useEffect(() => {
+    setAspectRatio(settings.defaultAspectRatio || ASPECT_RATIOS[0]);
+    setResolution(settings.defaultResolution || RESOLUTIONS[0]);
+  }, [settings.defaultAspectRatio, settings.defaultResolution]);
 
   const refreshStatus = async () => {
     try {
@@ -88,6 +51,12 @@ function GeneratePage() {
     setLoading(true);
     setMessage("");
 
+    if (!settings.apiKey) {
+      setMessage("Добавьте API-ключ в настройках перед запуском.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const { payload } = await requestApi("/generate", {
         method: "POST",
@@ -95,7 +64,7 @@ function GeneratePage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          api_key: apiKey,
+          api_key: settings.apiKey,
           aspect_ratio: aspectRatio,
           resolution,
           sheet_prompts: promptList,
@@ -132,16 +101,20 @@ function GeneratePage() {
           <p className="muted">Передайте промты и ключ для запуска пайплайна Gemini.</p>
 
           <form className="form" onSubmit={submitGeneration}>
-            <label>
-              API Key
-              <input
-                name="api_key"
-                type="password"
-                placeholder="sk-..."
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-              />
-            </label>
+            <div className="inline-status">
+              <div>
+                <p className="eyebrow">API ключ</p>
+                <p className="muted">
+                  Ключ подтягивается из раздела настроек и передаётся при запуске.
+                </p>
+                {!settings.apiKey && (
+                  <p className="status warning">Добавьте ключ на странице настроек.</p>
+                )}
+              </div>
+              <span className={settings.apiKey ? "badge badge-success" : "badge badge-warning"}>
+                {settings.apiKey ? "Сохранён" : "Не задан"}
+              </span>
+            </div>
             <label>
               Соотношение сторон
               <select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)}>
@@ -192,7 +165,11 @@ function GeneratePage() {
               ))}
             </div>
 
-            <button type="submit" className="primary" disabled={loading || promptList.length === 0}>
+            <button
+              type="submit"
+              className="primary"
+              disabled={loading || promptList.length === 0 || !settings.apiKey}
+            >
               {loading ? "Запускаю..." : "Запустить генерацию"}
             </button>
             {message && <p className="status">{message}</p>}
