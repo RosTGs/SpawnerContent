@@ -118,6 +118,7 @@ function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [catalogStatus, setCatalogStatus] = useState({ state: "idle", message: "" });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "", tags: "" });
@@ -125,11 +126,11 @@ function ProjectsPage() {
   const [projectDetails, setProjectDetails] = useState({});
   const [activeTab, setActiveTab] = useState("content");
   const [detailOpen, setDetailOpen] = useState(false);
+  const [templateCatalog, setTemplateCatalog] = useState([]);
+  const [assetCatalog, setAssetCatalog] = useState([]);
   const [inputs, setInputs] = useState({
-    templateName: "",
-    templateText: "",
-    assetName: "",
-    assetRole: "",
+    templateId: "",
+    assetId: "",
   });
   const [pageLimitMessage, setPageLimitMessage] = useState("");
 
@@ -152,6 +153,7 @@ function ProjectsPage() {
 
   useEffect(() => {
     loadProjects();
+    loadCatalogs();
   }, []);
 
   useEffect(() => {
@@ -261,40 +263,53 @@ function ProjectsPage() {
 
   const addTemplate = (event) => {
     event.preventDefault();
-    if (!selectedProject || !inputs.templateName.trim()) return;
+
+    if (!selectedProject || !inputs.templateId) return;
+
+    const template = templateCatalog.find((item) => String(item.id) === inputs.templateId);
+    if (!template) return;
 
     updateProjectData(selectedProject.id, (data) => ({
       ...data,
-      templates: [
-        {
-          id: crypto.randomUUID(),
-          name: inputs.templateName.trim(),
-          text: inputs.templateText.trim(),
-        },
-        ...data.templates,
-      ],
+      templates: data.templates.some((item) => item.id === template.id)
+        ? data.templates
+        : [
+            {
+              id: template.id,
+              name: template.name,
+              text: template.text,
+              kind: template.kind,
+            },
+            ...data.templates,
+          ],
     }));
 
-    setInputs((prev) => ({ ...prev, templateName: "", templateText: "" }));
+    setInputs((prev) => ({ ...prev, templateId: "" }));
   };
 
   const addAsset = (event) => {
     event.preventDefault();
-    if (!selectedProject || !inputs.assetName.trim()) return;
+    if (!selectedProject || !inputs.assetId) return;
+
+    const asset = assetCatalog.find((item) => String(item.id) === inputs.assetId);
+    if (!asset) return;
 
     updateProjectData(selectedProject.id, (data) => ({
       ...data,
-      assets: [
-        {
-          id: crypto.randomUUID(),
-          name: inputs.assetName.trim(),
-          role: inputs.assetRole.trim(),
-        },
-        ...data.assets,
-      ],
+      assets: data.assets.some((item) => item.id === asset.id)
+        ? data.assets
+        : [
+            {
+              id: asset.id,
+              name: asset.name,
+              role: asset.role,
+              kind: asset.kind,
+            },
+            ...data.assets,
+          ],
     }));
 
-    setInputs((prev) => ({ ...prev, assetName: "", assetRole: "" }));
+    setInputs((prev) => ({ ...prev, assetId: "" }));
   };
 
   const removeTemplate = (templateId) => {
@@ -368,6 +383,40 @@ function ProjectsPage() {
     if (!selectedProject) return;
     updateProjectData(selectedProject.id, () => createDefaultProjectData());
     setPageLimitMessage("");
+  };
+
+  const normalizeTemplate = (template) => ({
+    id: template.id,
+    name: template.name || template.title || "Без названия",
+    text: template.description || template.content || "",
+    kind: template.kind || "text",
+  });
+
+  const normalizeAsset = (asset) => ({
+    id: asset.id,
+    name: asset.filename || asset.name || "Ассет",
+    role: asset.description || "",
+    kind: asset.kind || "asset",
+  });
+
+  const loadCatalogs = async () => {
+    setCatalogStatus({ state: "pending", message: "Загружаем каталоги шаблонов и ассетов..." });
+
+    try {
+      const [{ payload: templatePayload }, { payload: assetPayload }] = await Promise.all([
+        requestApi("/templates"),
+        requestApi("/assets"),
+      ]);
+
+      setTemplateCatalog((templatePayload?.templates || []).map(normalizeTemplate));
+      setAssetCatalog((assetPayload?.assets || []).map(normalizeAsset));
+      setCatalogStatus({ state: "success", message: "Каталоги загружены с сервера" });
+    } catch (catalogError) {
+      setCatalogStatus({
+        state: "error",
+        message: `Не удалось загрузить каталоги: ${catalogError.message || catalogError}`,
+      });
+    }
   };
 
   const generatePages = (isRegeneration = false) => {
@@ -535,37 +584,37 @@ function ProjectsPage() {
                   <div className="section-head">
                     <div>
                       <p className="eyebrow">Шаблоны</p>
-                      <h3>Добавить шаблон</h3>
+                      <h3>Подключить шаблон с сервера</h3>
+                    </div>
+                    <div className={`status-chip ${catalogStatus.state}`} role="status">
+                      {catalogStatus.state === "pending" && "Загружаем каталоги..."}
+                      {catalogStatus.state === "success" && catalogStatus.message}
+                      {catalogStatus.state === "error" && catalogStatus.message}
+                      {catalogStatus.state === "idle" && "Каталоги не загружались"}
                     </div>
                   </div>
                   <form className="form" onSubmit={addTemplate}>
                     <label>
-                      Название шаблона
-                      <input
-                        placeholder="Например, Карточка персонажа"
-                        value={inputs.templateName}
-                        onChange={(event) => updateInput("templateName", event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Содержимое
-                      <textarea
-                        rows={3}
-                        placeholder="Описание структуры страницы или требования к наполнению"
-                        value={inputs.templateText}
-                        onChange={(event) => updateInput("templateText", event.target.value)}
-                      />
+                      Шаблон из библиотеки
+                      <select
+                        value={inputs.templateId}
+                        onChange={(event) => updateInput("templateId", event.target.value)}
+                      >
+                        <option value="">Выберите сохранённый шаблон</option>
+                        {templateCatalog.map((template) => (
+                          <option key={template.id} value={template.id}>
+                            {template.name} · {template.kind}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="muted">Шаблоны берутся из сохранённого каталога на сервере.</p>
                     </label>
                     <div className="actions">
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={() => setInputs((prev) => ({ ...prev, templateName: "", templateText: "" }))}
-                      >
-                        Очистить
+                      <button type="button" className="ghost" onClick={loadCatalogs}>
+                        Обновить каталоги
                       </button>
-                      <button type="submit" className="primary" disabled={!inputs.templateName.trim()}>
-                        Добавить шаблон
+                      <button type="submit" className="primary" disabled={!inputs.templateId}>
+                        Добавить выбранный шаблон
                       </button>
                     </div>
                   </form>
@@ -604,35 +653,27 @@ function ProjectsPage() {
                   <div className="section-head">
                     <div>
                       <p className="eyebrow">Ассеты</p>
-                      <h3>Персонажи и ассеты</h3>
+                      <h3>Персонажи и ассеты с сервера</h3>
                     </div>
                   </div>
                   <form className="form" onSubmit={addAsset}>
                     <label>
-                      Имя или идентификатор
-                      <input
-                        placeholder="Например, Ника — главный герой"
-                        value={inputs.assetName}
-                        onChange={(event) => updateInput("assetName", event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Роль/описание
-                      <input
-                        placeholder="Роль, эмоции, ограничения"
-                        value={inputs.assetRole}
-                        onChange={(event) => updateInput("assetRole", event.target.value)}
-                      />
+                      Ассет из библиотеки
+                      <select value={inputs.assetId} onChange={(event) => updateInput("assetId", event.target.value)}>
+                        <option value="">Выберите сохранённый ассет или персонажа</option>
+                        {assetCatalog.map((asset) => (
+                          <option key={asset.id} value={asset.id}>
+                            {asset.name} · {asset.kind}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="muted">Используются ассеты, ранее загруженные на сервер.</p>
                     </label>
                     <div className="actions">
-                      <button type="button" className="ghost" onClick={() => setInputs((prev) => ({
-                        ...prev,
-                        assetName: "",
-                        assetRole: "",
-                      }))}>
-                        Очистить
+                      <button type="button" className="ghost" onClick={loadCatalogs}>
+                        Обновить каталоги
                       </button>
-                      <button type="submit" className="primary" disabled={!inputs.assetName.trim()}>
+                      <button type="submit" className="primary" disabled={!inputs.assetId}>
                         Добавить ассет
                       </button>
                     </div>
