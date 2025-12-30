@@ -17,6 +17,70 @@ body {
     #0b1021;
 }
 
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  backdrop-filter: blur(10px);
+  background: rgba(11, 16, 33, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.brand .dot {
+  color: #8fa7ff;
+}
+
+.brand .title {
+  font-size: 16px;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.nav-link {
+  color: #cfd7f5;
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-link:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.nav-link.active {
+  background: rgba(143, 167, 255, 0.14);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 main.page {
   max-width: 1100px;
   margin: 0 auto;
