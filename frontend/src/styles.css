@@ -154,6 +154,17 @@ p.muted {
   gap: 12px;
 }
 
+.form .inline-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -164,6 +175,11 @@ label {
 
 label.inline {
   max-width: 260px;
+}
+
+.field-error {
+  color: #f87171;
+  font-size: 12px;
 }
 
 input,
@@ -234,6 +250,14 @@ button:not(:disabled):active {
   font-weight: 600;
 }
 
+.status.warning {
+  color: #fbbf24;
+}
+
+.status.error {
+  color: #f87171;
+}
+
 .section-head {
   margin-bottom: 8px;
 }
@@ -252,6 +276,30 @@ button:not(:disabled):active {
 
 .examples-grid {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.settings-form {
+  gap: 24px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.settings-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.settings-block h2 {
+  margin: 2px 0 4px;
 }
 
 .assets-card {
@@ -343,6 +391,30 @@ button:not(:disabled):active {
   gap: 6px;
 }
 
+.settings-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.defaults {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.save-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .empty-state {
   padding: 20px;
   border: 1px dashed rgba(255, 255, 255, 0.16);
@@ -426,6 +498,21 @@ button:not(:disabled):active {
 .badge-error {
   background: rgba(248, 113, 113, 0.16);
   color: #f87171;
+}
+
+.badge-success {
+  background: rgba(52, 211, 153, 0.18);
+  color: #34d399;
+}
+
+.badge-warning {
+  background: rgba(251, 191, 36, 0.14);
+  color: #fbbf24;
+}
+
+.badge-pending {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cfd7f5;
 }
 
 .image-list {
