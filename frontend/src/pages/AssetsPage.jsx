@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { requestApi } from "../api/client";
+import { MAX_UPLOAD_SIZE_BYTES, UPLOAD_LIMIT_LABEL } from "../constants/uploads";
 
 function normalizeAsset(asset) {
   const name = asset.filename || asset.name || "Ассет";
@@ -56,11 +57,27 @@ function AssetsPage() {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
+    const oversize = files.filter((file) => file.size > MAX_UPLOAD_SIZE_BYTES);
+    const allowed = files.filter((file) => file.size <= MAX_UPLOAD_SIZE_BYTES);
+
+    if (oversize.length) {
+      setError(
+        `Эти файлы превышают лимит ${UPLOAD_LIMIT_LABEL}: ${oversize
+          .map((file) => file.name)
+          .join(", ")}. Уменьшите размер и попробуйте снова.`,
+      );
+    }
+
+    if (!allowed.length) {
+      event.target.value = "";
+      return;
+    }
+
     startStatus("Загружаем ассеты на сервер...");
 
     try {
       const uploads = await Promise.all(
-        files.map(async (file) => {
+        allowed.map(async (file) => {
           const formData = new FormData();
           formData.append("file", file);
           formData.append("filename", file.name.replace(/\.[^.]+$/, ""));
@@ -76,7 +93,11 @@ function AssetsPage() {
       );
 
       setAssets((prev) => [...uploads, ...prev]);
-      finishStatus(`${uploads.length} ассет(а) сохранены на сервере.`);
+      finishStatus(
+        `${uploads.length} ассет(а) сохранены на сервере.${
+          oversize.length ? ` Пропущены из-за размера: ${oversize.map((file) => file.name).join(", ")}.` : ""
+        }`,
+      );
     } catch (error) {
       setError(`Не удалось загрузить ассеты: ${error.message || error}`);
     } finally {
