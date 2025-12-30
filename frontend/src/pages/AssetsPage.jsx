@@ -1,73 +1,100 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 const initialAssets = [
   {
     id: "aurora",
     name: "Аврора Чан",
-    roles: ["Художник окружения", "Компоузер"],
-    image: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=600&q=80",
+    kind: "2D персонаж",
+    image:
+      "https://images.unsplash.com/photo-1615109398623-88346a601842?auto=format&fit=crop&w=800&q=80&sat=-30",
   },
   {
     id: "mikael",
     name: "Микаэль Вронский",
-    roles: ["Художник персонажей", "Тех. арт"],
-    image: "https://images.unsplash.com/photo-1503023345310-bd7c1de61c7d?auto=format&fit=crop&w=600&q=80",
+    kind: "2D персонаж",
+    image:
+      "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=800&q=80&sat=-20",
   },
   {
     id: "irina",
-    name: "Ирина Штоль", 
-    roles: ["Продюсер", "Референс-менеджер"],
-    image: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=600&q=80&sat=-100",
+    name: "Ирина Штоль",
+    kind: "2D персонаж",
+    image:
+      "https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&w=800&q=80&sat=-40",
   },
   {
     id: "oliver",
     name: "Оливер Сато",
-    roles: ["3D-моделлер", "Риггер"],
-    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=600&q=80&sat=-35",
+    kind: "2D персонаж",
+    image:
+      "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80&sat=-50",
   },
 ];
 
 function AssetsPage() {
   const [assets, setAssets] = useState(initialAssets);
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
   const [status, setStatus] = useState({ state: "idle", message: "" });
-
-  const availableRoles = useMemo(
-    () => Array.from(new Set(initialAssets.flatMap((asset) => asset.roles))),
-    []
-  );
+  const fileInputRef = useRef(null);
 
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {
-      const matchesSearch = asset.name.toLowerCase().includes(search.toLowerCase());
-      const matchesRole = roleFilter ? asset.roles.includes(roleFilter) : true;
-      return matchesSearch && matchesRole;
+      return asset.name.toLowerCase().includes(search.toLowerCase());
     });
-  }, [assets, search, roleFilter]);
+  }, [assets, search]);
 
   const startStatus = (message) => setStatus({ state: "pending", message });
   const finishStatus = (message) => setStatus({ state: "success", message });
 
+  const handleFileInputClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesAdded = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    startStatus("Загружаем изображения персонажей...");
+
+    const filePromises = files.map(
+      (file) =>
+        new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            resolve({
+              id: `${file.name}-${Date.now()}`,
+              name: file.name.replace(/\.[^.]+$/, "") || "Персонаж без имени",
+              kind: "2D персонаж",
+              image: reader.result,
+            });
+          };
+          reader.readAsDataURL(file);
+        })
+    );
+
+    const newAssets = await Promise.all(filePromises);
+    setAssets((prev) => [...newAssets, ...prev]);
+    finishStatus(`${newAssets.length} персонаж(ей) добавлены как картинки.`);
+
+    event.target.value = "";
+  };
+
   const handleUpload = () => {
-    startStatus("Загружаем ассеты...");
-    setTimeout(() => {
-      finishStatus("3 файла добавлены в библиотеку (mock).");
-    }, 900);
+    handleFileInputClick();
   };
 
   const handleGenerate = () => {
-    startStatus("Запускаем пайплайн генерации персонажа...");
+    startStatus("Готовим 2D персонажа...");
     setTimeout(() => {
       const newAsset = {
         id: `generated-${Date.now()}`,
-        name: "Новый персонаж",
-        roles: ["Художник персонажей"],
-        image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=600&q=80",
+        name: "Новый 2D персонаж",
+        kind: "2D персонаж",
+        image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
       };
       setAssets((prev) => [newAsset, ...prev]);
-      finishStatus("Новый персонаж сгенерирован и добавлен.");
-    }, 1100);
+      finishStatus("Персонаж добавлен в библиотеку для промтов.");
+    }, 900);
   };
 
   const handleDelete = (assetId, assetName) => {
@@ -75,10 +102,8 @@ function AssetsPage() {
     if (!confirmed) return;
 
     startStatus("Удаляем ассет...");
-    setTimeout(() => {
-      setAssets((prev) => prev.filter((asset) => asset.id !== assetId));
-      finishStatus("Ассет удалён из библиотеки.");
-    }, 700);
+    setAssets((prev) => prev.filter((asset) => asset.id !== assetId));
+    finishStatus("Ассет удалён из библиотеки.");
   };
 
   return (
@@ -86,12 +111,12 @@ function AssetsPage() {
       <div className="section-head">
         <div>
           <p className="eyebrow">Ассеты</p>
-          <h1>Библиотека персонажей</h1>
-          <p className="muted">Следите за изображениями, ролями в команде и статусами операций.</p>
+          <h1>Библиотека 2D персонажей</h1>
+          <p className="muted">Готовые изображения, которые можно подставлять в промт генерации.</p>
         </div>
         <div className="actions">
           <button className="ghost" onClick={handleUpload} disabled={status.state === "pending"}>
-            Загрузить
+            Добавить картинки
           </button>
           <button className="primary" onClick={handleGenerate} disabled={status.state === "pending"}>
             Сгенерировать
@@ -110,17 +135,6 @@ function AssetsPage() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
-          <label className="inline">
-            <span>Роль</span>
-            <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
-              <option value="">Все</option>
-              {availableRoles.map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
 
         <div className={`status-chip ${status.state}`} role="status">
@@ -135,12 +149,12 @@ function AssetsPage() {
           <article key={asset.id} className="asset-card">
             <div className="asset-media" role="img" aria-label={asset.name}>
               <img src={asset.image} alt="" loading="lazy" />
-              <span className="badge badge-pending">{asset.roles[0]}</span>
+              <span className="badge badge-pending">{asset.kind}</span>
             </div>
             <div className="asset-body">
               <div>
                 <h3>{asset.name}</h3>
-                <p className="muted">{asset.roles.join(" • ")}</p>
+                <p className="muted">Добавлен как изображение для промтов</p>
               </div>
               <div className="asset-actions">
                 <button
@@ -158,10 +172,19 @@ function AssetsPage() {
         {filteredAssets.length === 0 && (
           <div className="empty-state">
             <p className="eyebrow">Нет результатов</p>
-            <p className="muted">Скорректируйте поиск или роли, чтобы увидеть ассеты.</p>
+            <p className="muted">Скорректируйте поиск, чтобы увидеть персонажей.</p>
           </div>
         )}
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={handleFilesAdded}
+      />
     </section>
   );
 }
