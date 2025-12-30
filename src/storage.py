@@ -83,8 +83,10 @@ class TemplateRecord:
 
     id: int
     name: str
+    kind: str = "text"
     category: str = ""
     description: str = ""
+    content: str = ""
     author: str = ""
     status: str = "draft"
     created_at: str = ""
@@ -96,8 +98,10 @@ class TemplateRecord:
         return cls(
             id=int(payload.get("id", 0)),
             name=str(payload.get("name", "")),
+            kind=str(payload.get("kind", payload.get("category", "text"))),
             category=str(payload.get("category", "")),
             description=str(payload.get("description", "")),
+            content=str(payload.get("content", "")),
             author=str(payload.get("author", "")),
             status=str(payload.get("status", "draft")),
             created_at=str(payload.get("created_at", "")),

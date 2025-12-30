@@ -75,6 +75,7 @@ STATUS_LABELS = {
     "approved": "Апрув",
     "error": "Ошибка",
 }
+TEMPLATE_KINDS = {"text", "background", "layout"}
 
 
 @dataclass
@@ -262,8 +263,10 @@ def _serialize_template(template: TemplateRecord) -> dict[str, object]:
     return {
         "id": template.id,
         "name": template.name,
+        "kind": template.kind,
         "category": template.category,
         "description": template.description,
+        "content": template.content,
         "author": template.author,
         "status": template.status,
         "created_at": template.created_at,
@@ -474,8 +477,13 @@ def create_app() -> Flask:
     def api_create_template() -> object:
         payload = _get_request_data()
         name = (payload.get("name") or "").strip()
-        category = (payload.get("category") or "").strip()
+        kind = (payload.get("kind") or "text").strip().lower()
+        if kind not in TEMPLATE_KINDS:
+            return jsonify({"error": "Неизвестный тип шаблона"}), 400
+
+        category = (payload.get("category") or kind).strip()
         description = (payload.get("description") or "").strip()
+        content = (payload.get("content") or "").strip()
         author = (payload.get("author") or "").strip()
         if not name:
             return jsonify({"error": "Укажите название темплейта"}), 400
@@ -484,8 +492,10 @@ def create_app() -> Flask:
         template = TemplateRecord(
             id=_next_template_id,
             name=name,
+            kind=kind,
             category=category,
             description=description,
+            content=content,
             author=author,
             status="draft",
             created_at=_timestamp(),
@@ -504,12 +514,19 @@ def create_app() -> Flask:
             return jsonify({"error": "Темплейт не найден"}), 404
 
         payload = _get_request_data()
+        if "kind" in payload:
+            kind = str(payload.get("kind") or template.kind).lower()
+            if kind not in TEMPLATE_KINDS:
+                return jsonify({"error": "Неизвестный тип шаблона"}), 400
+            template.kind = kind
         if "name" in payload:
             template.name = str(payload.get("name") or template.name)
         if "category" in payload:
             template.category = str(payload.get("category") or template.category)
         if "description" in payload:
             template.description = str(payload.get("description") or template.description)
+        if "content" in payload:
+            template.content = str(payload.get("content") or template.content)
         if "status" in payload:
             template.status = str(payload.get("status") or template.status)
         if "author" in payload:

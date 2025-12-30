@@ -575,6 +575,11 @@ button:not(:disabled):active {
   font-size: 13px;
 }
 
+.tag.active {
+  background: rgba(143, 167, 255, 0.16);
+  border: 1px solid rgba(143, 167, 255, 0.4);
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -642,6 +647,10 @@ button:not(:disabled):active {
 .template-name {
   font-weight: 700;
   font-size: 16px;
+}
+
+.template-content {
+  white-space: pre-wrap;
 }
 
 @media (max-width: 960px) {
