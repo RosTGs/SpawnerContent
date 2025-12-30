@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { requestApi } from "../api/client";
+import { MAX_UPLOAD_SIZE_BYTES, UPLOAD_LIMIT_LABEL } from "../constants/uploads";
 
 const TEMPLATE_KINDS = [
   {
@@ -134,9 +135,19 @@ function TemplatesPage() {
   };
 
   const handleFileChange = (kind, file) => {
+    setError("");
+    setInfo("");
+
     if (!file) {
       updateField(kind, "file", null);
       updateField(kind, "preview", "");
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      updateField(kind, "file", null);
+      updateField(kind, "preview", "");
+      setError(`Файл слишком большой. Максимальный размер — ${UPLOAD_LIMIT_LABEL}.`);
       return;
     }
 

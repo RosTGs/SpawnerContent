@@ -24,10 +24,18 @@ export async function requestApi(path, options = {}) {
       const payload = isJson ? await response.json() : await response.text();
 
       if (!response.ok) {
-        const message =
-          typeof payload === "string"
-            ? payload || `HTTP ${response.status}`
-            : payload?.error || `HTTP ${response.status}`;
+        const message = (() => {
+          if (response.status === 413) {
+            return "Файл слишком большой для загрузки. Уменьшите размер и попробуйте снова.";
+          }
+
+          if (typeof payload === "string") {
+            return payload || `HTTP ${response.status}`;
+          }
+
+          return payload?.error || `HTTP ${response.status}`;
+        })();
+
         throw new Error(message);
       }
 

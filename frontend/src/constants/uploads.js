@@ -1,0 +1,3 @@
+export const MAX_UPLOAD_SIZE_MB = 1;
+export const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+export const UPLOAD_LIMIT_LABEL = `${MAX_UPLOAD_SIZE_MB} МБ`;
