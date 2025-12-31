@@ -21,6 +21,7 @@ DATA_DIR = DEFAULT_OUTPUT_DIR / "data"
 PROJECTS_FILE = DATA_DIR / "projects.json"
 TEMPLATES_FILE = DATA_DIR / "templates.json"
 ASSETS_FILE = DATA_DIR / "assets.json"
+GENERATIONS_FILE = DATA_DIR / "generations.json"
 
 
 @dataclass
@@ -141,6 +142,45 @@ class AssetRecord:
         )
 
 
+@dataclass
+class GenerationRecord:
+    """Persisted generation state used to restore progress after рестартов."""
+
+    id: int
+    sheet_prompts: List[str]
+    aspect_ratio: str
+    resolution: str
+    latest_image: Optional[str] = None
+    image_paths: List[Optional[str]] = field(default_factory=list)
+    image_statuses: List[str] = field(default_factory=list)
+    image_approvals: List[bool] = field(default_factory=list)
+    pdf_image_candidates: List[List[str]] = field(default_factory=list)
+    background_references: List[str] = field(default_factory=list)
+    detail_references: List[str] = field(default_factory=list)
+    text_parts: List[str] = field(default_factory=list)
+    status: str = "pending"
+    approved: bool = False
+
+    @classmethod
+    def from_dict(cls, payload: Dict[str, object]) -> "GenerationRecord":
+        return cls(
+            id=int(payload.get("id", 0)),
+            sheet_prompts=list(payload.get("sheet_prompts", [])),
+            aspect_ratio=str(payload.get("aspect_ratio", "1:1")),
+            resolution=str(payload.get("resolution", "1K")),
+            latest_image=payload.get("latest_image"),
+            image_paths=list(payload.get("image_paths", [])),
+            image_statuses=list(payload.get("image_statuses", [])),
+            image_approvals=list(payload.get("image_approvals", [])),
+            pdf_image_candidates=list(payload.get("pdf_image_candidates", [])),
+            background_references=list(payload.get("background_references", [])),
+            detail_references=list(payload.get("detail_references", [])),
+            text_parts=list(payload.get("text_parts", [])),
+            status=str(payload.get("status", "pending")),
+            approved=bool(payload.get("approved", False)),
+        )
+
+
 def ensure_output_dir(root: Path = DEFAULT_OUTPUT_DIR) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -229,6 +269,14 @@ def load_assets(path: Path = ASSETS_FILE) -> List[AssetRecord]:
 
 def save_assets(assets: List[AssetRecord], path: Path = ASSETS_FILE) -> Path:
     return _save_records(path, [asdict(asset) for asset in assets])
+
+
+def load_generations(path: Path = GENERATIONS_FILE) -> List[GenerationRecord]:
+    return [GenerationRecord.from_dict(item) for item in _load_records(path)]
+
+
+def save_generations(generations: List[GenerationRecord], path: Path = GENERATIONS_FILE) -> Path:
+    return _save_records(path, [asdict(generation) for generation in generations])
 
 
 def _maybe_downscale_image(path: Path, max_side: int) -> None:
