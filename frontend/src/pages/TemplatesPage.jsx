@@ -73,9 +73,8 @@ function TemplatesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-  const [textPrompt, setTextPrompt] = useState("");
-  const [generateLoading, setGenerateLoading] = useState(false);
-  const [activeKind, setActiveKind] = useState("text");
+  const [activeListKind, setActiveListKind] = useState("text");
+  const [activeFormKind, setActiveFormKind] = useState("text");
 
   const makeEmptyForms = () =>
     TEMPLATE_KINDS.reduce(
@@ -99,8 +98,13 @@ function TemplatesPage() {
   );
 
   const filteredTemplates = useMemo(
-    () => sortedTemplates.filter((template) => template.kind === activeKind),
-    [sortedTemplates, activeKind],
+    () => sortedTemplates.filter((template) => template.kind === activeListKind),
+    [sortedTemplates, activeListKind],
+  );
+
+  const activeFormKindConfig = useMemo(
+    () => TEMPLATE_KINDS.find((kind) => kind.id === activeFormKind) || TEMPLATE_KINDS[0],
+    [activeFormKind],
   );
 
   useEffect(() => {
@@ -223,49 +227,6 @@ function TemplatesPage() {
     }
   };
 
-  const generateFromText = async (event) => {
-    event.preventDefault();
-    if (!textPrompt.trim()) return;
-
-    setGenerateLoading(true);
-    setError("");
-    setInfo("");
-
-    try {
-      const { payload } = await requestApi("/templates", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: `Текстовый шаблон ${new Date().toLocaleTimeString()}`,
-          description: "Создано по текстовому описанию",
-          content: textPrompt.trim(),
-          kind: "text",
-          category: "text",
-        }),
-      });
-
-      const generated = normalizeTemplate(payload?.template || payload);
-      setTemplates((prev) => [generated, ...prev]);
-      setTextPrompt("");
-      setInfo("Шаблон создан по описанию");
-    } catch (apiError) {
-      const draft = normalizeTemplate({
-        id: `draft-${Date.now()}`,
-        name: textPrompt.slice(0, 40) || "Черновик шаблона",
-        kind: "text",
-        description: "Создан локально",
-        content: textPrompt,
-      });
-      setTemplates((prev) => [draft, ...prev]);
-      setError(`Не удалось вызвать генерацию: ${apiError.message || apiError}. Добавлен черновик.`);
-      setTextPrompt("");
-    } finally {
-      setGenerateLoading(false);
-    }
-  };
-
   const deleteTemplate = async (templateId) => {
     setError("");
     setInfo("");
@@ -298,113 +259,93 @@ function TemplatesPage() {
         </header>
         {(error || info) && <p className="status">{error || info}</p>}
 
-        <div className="grid">
+        <div className="template-tabs">
           {TEMPLATE_KINDS.map((kind) => (
-            <article key={kind.id} className="card">
-              <header className="section-head">
-                <div>
-                  <p className="eyebrow">{kind.title}</p>
-                  <h2>{kind.helper}</h2>
-                </div>
-              </header>
-              <form className="form" onSubmit={(event) => submitTemplate(event, kind.id)}>
-                <label>
-                  Название
-                  <input
-                    name={`name-${kind.id}`}
-                    placeholder="Как вы будете находить этот шаблон"
-                    value={forms[kind.id].name}
-                    onChange={(event) => updateField(kind.id, "name", event.target.value)}
-                  />
-                </label>
-                {kind.requiresFile ? (
-                  <label>
-                    {kind.contentLabel}
-                    <input
-                      type="file"
-                      name={`file-${kind.id}`}
-                      accept="image/*"
-                      onChange={(event) => handleFileChange(kind.id, event.target.files?.[0])}
-                    />
-                    {forms[kind.id].preview && (
-                      <img
-                        src={forms[kind.id].preview}
-                        alt="Превью шаблона"
-                        style={{ marginTop: "0.5rem", borderRadius: "0.5rem", maxHeight: "180px" }}
-                      />
-                    )}
-                  </label>
-                ) : (
-                  <label>
-                    {kind.contentLabel}
-                    <textarea
-                      name={`content-${kind.id}`}
-                      rows={3}
-                      placeholder={kind.placeholder}
-                      value={forms[kind.id].content}
-                      onChange={(event) => updateField(kind.id, "content", event.target.value)}
-                    />
-                  </label>
-                )}
-                <label>
-                  Описание
-                  <textarea
-                    name={`description-${kind.id}`}
-                    rows={2}
-                    placeholder="Коротко поясните, где применять шаблон"
-                    value={forms[kind.id].description}
-                    onChange={(event) => updateField(kind.id, "description", event.target.value)}
-                  />
-                </label>
-                <div className="actions">
-                  <button type="reset" className="ghost" onClick={() => setForms(makeEmptyForms())}>
-                    Очистить
-                  </button>
-                  <button
-                    type="submit"
-                    className="primary"
-                    disabled={
-                      !forms[kind.id].name.trim() ||
-                      (kind.requiresFile ? !forms[kind.id].file : !forms[kind.id].content.trim())
-                    }
-                  >
-                    Сохранить
-                  </button>
-                </div>
-              </form>
-            </article>
+            <button
+              key={kind.id}
+              className={activeFormKind === kind.id ? "tag active" : "tag"}
+              type="button"
+              onClick={() => setActiveFormKind(kind.id)}
+            >
+              {kind.title}
+            </button>
           ))}
+        </div>
 
-          <article className="card">
-            <header className="section-head">
-              <div>
-                <p className="eyebrow">Описание → Шаблон</p>
-                <h2>Сгенерировать текстовый</h2>
-                <p className="muted">Краткое ТЗ превратится в текстовый шаблон.</p>
-              </div>
-            </header>
-            <form className="form" onSubmit={generateFromText}>
+        <div className="template-form-panel">
+          <header className="section-head">
+            <div>
+              <p className="eyebrow">{activeFormKindConfig.title}</p>
+              <h2>{activeFormKindConfig.helper}</h2>
+            </div>
+          </header>
+          <form className="form" onSubmit={(event) => submitTemplate(event, activeFormKindConfig.id)}>
+            <label>
+              Название
+              <input
+                name={`name-${activeFormKindConfig.id}`}
+                placeholder="Как вы будете находить этот шаблон"
+                value={forms[activeFormKindConfig.id].name}
+                onChange={(event) => updateField(activeFormKindConfig.id, "name", event.target.value)}
+              />
+            </label>
+            {activeFormKindConfig.requiresFile ? (
               <label>
-                Текстовое ТЗ
+                {activeFormKindConfig.contentLabel}
+                <input
+                  type="file"
+                  name={`file-${activeFormKindConfig.id}`}
+                  accept="image/*"
+                  onChange={(event) => handleFileChange(activeFormKindConfig.id, event.target.files?.[0])}
+                />
+                {forms[activeFormKindConfig.id].preview && (
+                  <img
+                    src={forms[activeFormKindConfig.id].preview}
+                    alt="Превью шаблона"
+                    style={{ marginTop: "0.5rem", borderRadius: "0.5rem", maxHeight: "180px" }}
+                  />
+                )}
+              </label>
+            ) : (
+              <label>
+                {activeFormKindConfig.contentLabel}
                 <textarea
-                  name="description"
+                  name={`content-${activeFormKindConfig.id}`}
                   rows={3}
-                  placeholder="Например: письмо с приветствием, напомнить об акции, одна кнопка"
-                  value={textPrompt}
-                  onChange={(event) => setTextPrompt(event.target.value)}
-                  required
+                  placeholder={activeFormKindConfig.placeholder}
+                  value={forms[activeFormKindConfig.id].content}
+                  onChange={(event) => updateField(activeFormKindConfig.id, "content", event.target.value)}
                 />
               </label>
-              <div className="actions">
-                <button type="button" className="ghost" onClick={() => setTextPrompt("")}>
-                  Очистить
-                </button>
-                <button type="submit" className="primary" disabled={generateLoading || !textPrompt.trim()}>
-                  {generateLoading ? "Генерируем..." : "Сгенерировать"}
-                </button>
-              </div>
-            </form>
-          </article>
+            )}
+            <label>
+              Описание
+              <textarea
+                name={`description-${activeFormKindConfig.id}`}
+                rows={2}
+                placeholder="Коротко поясните, где применять шаблон"
+                value={forms[activeFormKindConfig.id].description}
+                onChange={(event) => updateField(activeFormKindConfig.id, "description", event.target.value)}
+              />
+            </label>
+            <div className="actions">
+              <button type="reset" className="ghost" onClick={() => setForms(makeEmptyForms())}>
+                Очистить
+              </button>
+              <button
+                type="submit"
+                className="primary"
+                disabled={
+                  !forms[activeFormKindConfig.id].name.trim() ||
+                  (activeFormKindConfig.requiresFile
+                    ? !forms[activeFormKindConfig.id].file
+                    : !forms[activeFormKindConfig.id].content.trim())
+                }
+              >
+                Сохранить
+              </button>
+            </div>
+          </form>
         </div>
       </section>
 
@@ -419,9 +360,9 @@ function TemplatesPage() {
             {TEMPLATE_KINDS.map((kind) => (
               <button
                 key={kind.id}
-                className={activeKind === kind.id ? "tag active" : "tag"}
+                className={activeListKind === kind.id ? "tag active" : "tag"}
                 type="button"
-                onClick={() => setActiveKind(kind.id)}
+                onClick={() => setActiveListKind(kind.id)}
               >
                 {kind.title}
               </button>
