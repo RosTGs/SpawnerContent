@@ -28,10 +28,12 @@ from .storage import (
     ASSETS_FILE,
     DATA_DIR,
     DEFAULT_OUTPUT_DIR,
+    GENERATIONS_FILE,
     PROJECTS_FILE,
     SETTINGS_FILE,
     TEMPLATES_FILE,
     AssetRecord,
+    GenerationRecord,
     ProjectRecord,
     Settings,
     SheetRecord,
@@ -40,11 +42,13 @@ from .storage import (
     ensure_output_dir,
     export_pdf,
     load_assets,
+    load_generations,
     load_projects,
     load_settings,
     load_templates,
     new_asset_path,
     save_assets,
+    save_generations,
     save_metadata,
     save_projects,
     save_settings,
@@ -199,15 +203,74 @@ class GenerationEntry:
         return DEFAULT_OUTPUT_DIR / "placeholder.png"
 
 
-_generations: List[GenerationEntry] = []
-_next_generation_id = 1
+def _fill_generation_lists(entry: GenerationEntry) -> None:
+    expected = len(entry.sheet_prompts)
+    if len(entry.image_paths) < expected:
+        entry.image_paths.extend([None] * (expected - len(entry.image_paths)))
+    if len(entry.image_statuses) < expected:
+        entry.image_statuses.extend(["pending"] * (expected - len(entry.image_statuses)))
+    if len(entry.image_approvals) < expected:
+        entry.image_approvals.extend([False] * (expected - len(entry.image_approvals)))
+    if len(entry.pdf_image_candidates) < expected:
+        entry.pdf_image_candidates.extend(
+            [[] for _ in range(expected - len(entry.pdf_image_candidates))]
+        )
+
+
+def _generation_from_record(record: GenerationRecord) -> GenerationEntry:
+    entry = GenerationEntry(
+        id=record.id,
+        sheet_prompts=record.sheet_prompts,
+        aspect_ratio=record.aspect_ratio,
+        resolution=record.resolution,
+        latest_image=record.latest_image,
+        image_paths=record.image_paths,
+        image_statuses=record.image_statuses,
+        image_approvals=record.image_approvals,
+        pdf_image_candidates=record.pdf_image_candidates,
+        background_references=record.background_references,
+        detail_references=record.detail_references,
+        text_parts=record.text_parts,
+        status=record.status,
+        approved=record.approved,
+    )
+    _fill_generation_lists(entry)
+    entry.recalc_flags()
+    return entry
+
+
+def _record_from_generation(entry: GenerationEntry) -> GenerationRecord:
+    _fill_generation_lists(entry)
+    entry.recalc_flags()
+    return GenerationRecord(
+        id=entry.id,
+        sheet_prompts=list(entry.sheet_prompts),
+        aspect_ratio=entry.aspect_ratio,
+        resolution=entry.resolution,
+        latest_image=entry.latest_image,
+        image_paths=list(entry.image_paths),
+        image_statuses=list(entry.image_statuses),
+        image_approvals=list(entry.image_approvals),
+        pdf_image_candidates=list(entry.pdf_image_candidates),
+        background_references=list(entry.background_references),
+        detail_references=list(entry.detail_references),
+        text_parts=list(entry.text_parts),
+        status=entry.status,
+        approved=entry.approved,
+    )
+
+
+ensure_data_dir(DATA_DIR)
 _settings: Settings = load_settings()
 _channel_lookup: dict[str, object] | None = None
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-ensure_data_dir(DATA_DIR)
 _projects: list[ProjectRecord] = load_projects(PROJECTS_FILE)
 _templates: list[TemplateRecord] = load_templates(TEMPLATES_FILE)
 _assets: list[AssetRecord] = load_assets(ASSETS_FILE)
+_generations: list[GenerationEntry] = [
+    _generation_from_record(record) for record in load_generations(GENERATIONS_FILE)
+]
+_next_generation_id = 1 + max((entry.id for entry in _generations), default=0)
 _next_project_id = 1 + max((project.id for project in _projects), default=0)
 _next_template_id = 1 + max((template.id for template in _templates), default=0)
 _next_asset_id = 1 + max((asset.id for asset in _assets), default=0)
@@ -241,6 +304,10 @@ def _persist_catalogs() -> None:
     save_projects(_projects, PROJECTS_FILE)
     save_templates(_templates, TEMPLATES_FILE)
     save_assets(_assets, ASSETS_FILE)
+
+
+def _persist_generations() -> None:
+    save_generations([_record_from_generation(entry) for entry in _generations], GENERATIONS_FILE)
 
 
 def _serialize_project(project: ProjectRecord) -> dict[str, object]:
@@ -828,6 +895,7 @@ def create_app() -> Flask:
 
         entry.image_approvals[image_index] = True
         entry.recalc_flags()
+        _persist_generations()
         return jsonify({"message": "Изображение отмечено как понравившееся."})
 
     @app.post("/api/generations/<int:generation_id>/export_pdf")
@@ -984,6 +1052,7 @@ def _register_generation(
     )
     _next_generation_id += 1
     _generations.insert(0, entry)
+    _persist_generations()
     return entry
 
 
@@ -1071,6 +1140,8 @@ def _run_generation(
         else:
             entry.image_statuses[target_index] = "error"
         entry.recalc_flags()
+    finally:
+        _persist_generations()
 
 
 app = create_app()
