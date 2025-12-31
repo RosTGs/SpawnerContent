@@ -134,6 +134,7 @@ function ProjectsPage() {
   });
   const [pageLimitMessage, setPageLimitMessage] = useState("");
   const [templateFilter, setTemplateFilter] = useState("");
+  const [preview, setPreview] = useState(null);
 
   const sortedProjects = useMemo(
     () =>
@@ -463,7 +464,13 @@ function ProjectsPage() {
       const generation = {
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
-        pages: data.pages.map((page, index) => ({ ...page, index: index + 1 })),
+        updatedAt: new Date().toISOString(),
+        pages: data.pages.map((page, index) => ({
+          ...page,
+          index: index + 1,
+          version: 1,
+          regeneratedAt: new Date().toISOString(),
+        })),
         templates: data.templates,
         assets: data.assets,
         status: "ready",
@@ -479,6 +486,60 @@ function ProjectsPage() {
       };
     });
   };
+
+  const bumpImageVersion = (src) => {
+    if (!src) return src;
+    const [base] = src.split("?v=");
+    return `${base}?v=${Date.now()}`;
+  };
+
+  const regeneratePage = (pageId) => {
+    if (!selectedProject || !selectedProjectData?.generated) return;
+
+    updateProjectData(selectedProject.id, (data) => {
+      if (!data.generated) return data;
+
+      const sourcePage = data.pages.find((page) => page.id === pageId);
+      const archived = data.generated ? [JSON.parse(JSON.stringify(data.generated)), ...data.archive] : data.archive;
+      const timestamp = new Date().toISOString();
+
+      const updatedPages = data.generated.pages.map((page, index) => {
+        if (page.id !== pageId) return { ...page, index: index + 1 };
+
+        const merged = { ...page, ...sourcePage };
+        const version = (page.version || 1) + 1;
+
+        return {
+          ...merged,
+          index: index + 1,
+          version,
+          regeneratedAt: timestamp,
+          image: bumpImageVersion(merged.image || page.image),
+        };
+      });
+
+      return {
+        ...data,
+        generated: {
+          ...data.generated,
+          pages: updatedPages,
+          updatedAt: timestamp,
+          note: "Перегенерирован один лист",
+          status: "ready",
+        },
+        archive: archived,
+        status: "ready",
+        statusNote: `Лист перегенерирован (${sourcePage?.title || "без названия"})`,
+      };
+    });
+  };
+
+  const openPreview = (src, title, index) => {
+    if (!src) return;
+    setPreview({ src, title, index });
+  };
+
+  const closePreview = () => setPreview(null);
 
   const assemblePdf = () => {
     if (!selectedProject || !selectedProjectData?.generated) return;
@@ -879,34 +940,96 @@ function ProjectsPage() {
                 </div>
 
                 {selectedProjectData.generated ? (
-                  <div className="table-wrapper">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Страница</th>
-                          <th>Текст</th>
-                          <th>Изображение</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedProjectData.generated.pages.map((page) => (
-                          <tr key={page.id}>
-                            <td>{page.title || `Страница ${page.index}`}</td>
-                            <td className="muted">{page.body || "Нет описания"}</td>
-                            <td>
-                              {page.image ? (
-                                <a className="link" href={page.image} target="_blank" rel="noreferrer">
-                                  Открыть
-                                </a>
-                              ) : (
-                                "Не прикреплено"
-                              )}
-                            </td>
+                  <>
+                    <div className="sheet-grid">
+                      {selectedProjectData.generated.pages.map((page) => (
+                        <article key={page.id} className="card sheet-card">
+                          <div className="sheet-card__head">
+                            <div>
+                              <p className="eyebrow">Лист {page.index}</p>
+                              <h4>{page.title || `Страница ${page.index}`}</h4>
+                              <p className="muted sheet-card__meta">
+                                {page.regeneratedAt
+                                  ? `Обновлено ${formatDate(page.regeneratedAt)}`
+                                  : "Нет данных об обновлении"}
+                              </p>
+                            </div>
+                            <div className="sheet-card__tags">
+                              <span className="badge badge-success">Версия {page.version || 1}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="sheet-card__preview"
+                            disabled={!page.image}
+                            onClick={() => openPreview(page.image, page.title || `Страница ${page.index}`, page.index)}
+                          >
+                            {page.image ? (
+                              <img src={page.image} alt={page.title || "Превью листа"} />
+                            ) : (
+                              <div className="sheet-card__placeholder">Изображение появится после генерации</div>
+                            )}
+                            <span className="sheet-card__preview-hint">Нажмите, чтобы увеличить</span>
+                          </button>
+
+                          <p className="muted">{page.body || "Нет описания"}</p>
+
+                          <div className="sheet-card__actions">
+                            <button
+                              className="ghost"
+                              type="button"
+                              disabled={!page.image}
+                              onClick={() => openPreview(page.image, page.title || `Страница ${page.index}`, page.index)}
+                            >
+                              Открыть предпросмотр
+                            </button>
+                            <button className="primary" type="button" onClick={() => regeneratePage(page.id)}>
+                              Перегенерировать лист
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+
+                    <div className="table-wrapper">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Страница</th>
+                            <th>Текст</th>
+                            <th>Изображение</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {selectedProjectData.generated.pages.map((page) => (
+                            <tr key={page.id}>
+                              <td>
+                                {page.title || `Страница ${page.index}`}
+                                <p className="muted">Версия {page.version || 1}</p>
+                              </td>
+                              <td className="muted">{page.body || "Нет описания"}</td>
+                              <td>
+                                {page.image ? (
+                                  <a
+                                    className="link"
+                                    href={page.image}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    Открыть
+                                  </a>
+                                ) : (
+                                  "Не прикреплено"
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 ) : (
                   <p className="muted">
                     Заполните страницы, добавьте шаблоны и ассеты, затем запустите генерацию. Результат
@@ -957,6 +1080,29 @@ function ProjectsPage() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {preview && (
+        <div className="modal-backdrop" role="presentation" onClick={closePreview}>
+          <div
+            className="card modal preview-modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="section-head">
+              <div>
+                <p className="eyebrow">Лист {preview.index}</p>
+                <h3>{preview.title || "Предпросмотр"}</h3>
+              </div>
+              <button className="ghost" type="button" onClick={closePreview} aria-label="Закрыть предпросмотр">
+                ✕
+              </button>
+            </header>
+            <div className="preview-modal__body">
+              <img src={preview.src} alt={preview.title || "Изображение листа"} />
+            </div>
           </div>
         </div>
       )}
