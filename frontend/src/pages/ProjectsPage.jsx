@@ -114,6 +114,22 @@ function createDefaultProjectData() {
   };
 }
 
+const STORAGE_KEYS = {
+  projectDetails: "projects:details",
+  selectedProject: "projects:selected",
+};
+
+const loadStoredJson = (key, fallback) => {
+  if (typeof window === "undefined") return fallback;
+
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (storageError) {
+    return fallback;
+  }
+};
+
 function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -122,8 +138,14 @@ function ProjectsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "", tags: "" });
-  const [selectedProjectId, setSelectedProjectId] = useState(null);
-  const [projectDetails, setProjectDetails] = useState({});
+  const [selectedProjectId, setSelectedProjectId] = useState(() => {
+    const stored = loadStoredJson(STORAGE_KEYS.selectedProject, null);
+    return typeof stored === "string" && stored.trim() ? stored : null;
+  });
+  const [projectDetails, setProjectDetails] = useState(() => {
+    const stored = loadStoredJson(STORAGE_KEYS.projectDetails, {});
+    return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+  });
   const [activeTab, setActiveTab] = useState("content");
   const [detailOpen, setDetailOpen] = useState(false);
   const [templateCatalog, setTemplateCatalog] = useState([]);
@@ -159,15 +181,46 @@ function ProjectsPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedProjectId && sortedProjects.length) {
-      const firstProject = sortedProjects[0];
-      setSelectedProjectId(firstProject.id);
+    if (!sortedProjects.length) return;
+
+    const selectedExists =
+      selectedProjectId && sortedProjects.some((project) => project.id === selectedProjectId);
+
+    const projectToSelect = selectedExists ? selectedProjectId : sortedProjects[0]?.id;
+
+    if (!selectedExists || !projectDetails[projectToSelect]) {
       setProjectDetails((prev) => ({
         ...prev,
-        [firstProject.id]: prev[firstProject.id] || createDefaultProjectData(),
+        [projectToSelect]: prev[projectToSelect] || createDefaultProjectData(),
       }));
     }
-  }, [sortedProjects, selectedProjectId]);
+
+    if (!selectedExists && projectToSelect) {
+      setSelectedProjectId(projectToSelect);
+    }
+  }, [projectDetails, selectedProjectId, sortedProjects]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.projectDetails, JSON.stringify(projectDetails));
+    } catch (storageError) {
+      /* noop */
+    }
+  }, [projectDetails]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      if (selectedProjectId) {
+        localStorage.setItem(STORAGE_KEYS.selectedProject, JSON.stringify(selectedProjectId));
+      }
+    } catch (storageError) {
+      /* noop */
+    }
+  }, [selectedProjectId]);
 
   const loadProjects = async () => {
     setLoading(true);
