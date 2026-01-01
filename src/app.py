@@ -7,6 +7,7 @@ from datetime import datetime
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -916,6 +917,51 @@ def create_app() -> Flask:
         pdf_path = export_pdf(valid_paths, destination)
         return send_from_directory(
             pdf_path.parent, pdf_path.name, as_attachment=True, download_name=pdf_path.name
+        )
+
+    @app.get("/api/generations/<int:generation_id>/images/archive")
+    def download_generation_images(generation_id: int):
+        entry = _find_generation(generation_id)
+        if not entry:
+            return jsonify({"error": "Не удалось найти указанную генерацию."}), 404
+
+        _ensure_image_lists(entry)
+
+        resolved_images: list[Path] = []
+        for raw_path in entry.image_paths:
+            if not raw_path:
+                continue
+
+            candidate = Path(raw_path)
+            if candidate.is_absolute() and candidate.exists():
+                resolved_images.append(candidate)
+                continue
+
+            if candidate.is_absolute() and candidate.name:
+                fallback = DEFAULT_OUTPUT_DIR / candidate.name
+                if fallback.exists():
+                    resolved_images.append(fallback)
+                continue
+
+            if not candidate.is_absolute() and candidate.name:
+                fallback = DEFAULT_OUTPUT_DIR / candidate.name
+                if fallback.exists():
+                    resolved_images.append(fallback)
+
+        if not resolved_images:
+            return jsonify({"error": "Готовых изображений пока нет."}), 400
+
+        ensure_output_dir(DEFAULT_OUTPUT_DIR)
+        archive_path = DEFAULT_OUTPUT_DIR / f"generation-{entry.id}-images.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            for image_path in resolved_images:
+                archive.write(image_path, arcname=image_path.name)
+
+        return send_from_directory(
+            archive_path.parent,
+            archive_path.name,
+            as_attachment=True,
+            download_name=archive_path.name,
         )
 
     @app.route("/assets/<path:filename>")

@@ -136,12 +136,17 @@ p.muted {
 .section-head,
 .prompt-head,
 .generation-head,
+.generation-actions,
 .image-row,
 .progress {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.generation-actions {
+  flex-wrap: wrap;
 }
 
 .section-head h2 {
