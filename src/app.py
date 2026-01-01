@@ -1084,6 +1084,7 @@ def _run_generation(
             entry.image_statuses[prompt_index] = (
                 "regenerating" if target_index is not None else "generating"
             )
+            _persist_generations()
             result = client.generate_image(
                 prompt=full_prompt,
                 aspect_ratio=entry.aspect_ratio,
@@ -1096,6 +1097,8 @@ def _run_generation(
             entry.image_approvals[prompt_index] = False
             entry.latest_image = result.image_path
             entry.pdf_image_candidates[prompt_index] = result.extra_images
+
+            _persist_generations()
 
             generated_images.append(result.image_path)
             collected_text_parts.extend(result.text_parts)
@@ -1134,12 +1137,14 @@ def _run_generation(
         else:
             entry.image_statuses[target_index] = "error"
         entry.recalc_flags()
+        _persist_generations()
     except Exception as exc:  # noqa: BLE001
         if target_index is None:
             entry.image_statuses = ["error"] * len(entry.sheet_prompts)
         else:
             entry.image_statuses[target_index] = "error"
         entry.recalc_flags()
+        _persist_generations()
     finally:
         _persist_generations()
 
