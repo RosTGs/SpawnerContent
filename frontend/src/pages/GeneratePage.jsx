@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettings } from "../SettingsContext.jsx";
-import { requestApi } from "../api/client.js";
+import { downloadApi, requestApi } from "../api/client.js";
 import { ASPECT_RATIOS, RESOLUTIONS } from "../constants/generation.js";
 
 function GeneratePage() {
   const { settings } = useSettings();
   const [aspectRatio, setAspectRatio] = useState(settings.defaultAspectRatio || ASPECT_RATIOS[0]);
   const [resolution, setResolution] = useState(settings.defaultResolution || RESOLUTIONS[0]);
-  const [prompts, setPrompts] = useState([""]); 
+  const [prompts, setPrompts] = useState([""]);
   const [status, setStatus] = useState(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [downloadState, setDownloadState] = useState({});
 
   const promptList = useMemo(() => prompts.filter(Boolean), [prompts]);
 
@@ -96,6 +97,48 @@ function GeneratePage() {
       setLoading(false);
     }
   };
+
+  const toggleDownloadFlag = (key, value) => {
+    setDownloadState((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  const downloadPdf = async (generation) => {
+    const key = `${generation.id}-pdf`;
+    toggleDownloadFlag(key, true);
+
+    try {
+      await downloadApi(`/generations/${generation.id}/export_pdf`, {
+        method: "POST",
+        filename: `generation-${generation.id}.pdf`,
+      });
+      setMessage("");
+    } catch (error) {
+      setMessage(error.message || "Не удалось скачать PDF-файл");
+    } finally {
+      toggleDownloadFlag(key, false);
+    }
+  };
+
+  const downloadImages = async (generation) => {
+    const key = `${generation.id}-images`;
+    toggleDownloadFlag(key, true);
+
+    try {
+      await downloadApi(`/generations/${generation.id}/images/archive`, {
+        filename: `generation-${generation.id}-images.zip`,
+      });
+      setMessage("");
+    } catch (error) {
+      setMessage(error.message || "Не удалось скачать изображения");
+    } finally {
+      toggleDownloadFlag(key, false);
+    }
+  };
+
+  const isDownloading = (key) => Boolean(downloadState[key]);
 
   return (
     <>
@@ -232,6 +275,26 @@ function GeneratePage() {
                       {generation.ready}/{generation.total}
                     </span>
                   </header>
+                  <div className="generation-actions">
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => downloadPdf(generation)}
+                      disabled={!generation.approved || isDownloading(`${generation.id}-pdf`)}
+                    >
+                      {isDownloading(`${generation.id}-pdf`) ? "Готовлю PDF..." : "Скачать PDF"}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => downloadImages(generation)}
+                      disabled={generation.ready === 0 || isDownloading(`${generation.id}-images`)}
+                    >
+                      {isDownloading(`${generation.id}-images`)
+                        ? "Упаковываю файлы..."
+                        : "Скачать изображения"}
+                    </button>
+                  </div>
                   <ul className="image-list">
                     {generation.images.map((image) => (
                       <li key={image.index}>

@@ -1,12 +1,14 @@
 import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import AssetsPage from "./pages/AssetsPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
+import GeneratePage from "./pages/GeneratePage.jsx";
 import ProjectsPage from "./pages/ProjectsPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 import TemplatesPage from "./pages/TemplatesPage.jsx";
 
 const navLinks = [
   { to: "/main", label: "Главная" },
+  { to: "/generate", label: "Генерация" },
   { to: "/project", label: "Проекты" },
   { to: "/templates", label: "Шаблоны" },
   { to: "/assets", label: "Ассеты" },
@@ -49,6 +51,7 @@ function App() {
       <Route path="/" element={<AppLayout />}>
         <Route index element={<Navigate to="/main" replace />} />
         <Route path="/main" element={<DashboardPage />} />
+        <Route path="/generate" element={<GeneratePage />} />
         <Route path="/project" element={<ProjectsPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/assets" element={<AssetsPage />} />
