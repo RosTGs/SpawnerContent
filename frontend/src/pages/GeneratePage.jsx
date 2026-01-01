@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettings } from "../SettingsContext.jsx";
 import { requestApi } from "../api/client.js";
 import { ASPECT_RATIOS, RESOLUTIONS } from "../constants/generation.js";
@@ -11,27 +11,44 @@ function GeneratePage() {
   const [status, setStatus] = useState(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const promptList = useMemo(() => prompts.filter(Boolean), [prompts]);
 
-  useEffect(() => {
-    refreshStatus();
-  }, []);
+  const refreshStatus = useCallback(async () => {
+    setRefreshing(true);
 
-  useEffect(() => {
-    setAspectRatio(settings.defaultAspectRatio || ASPECT_RATIOS[0]);
-    setResolution(settings.defaultResolution || RESOLUTIONS[0]);
-  }, [settings.defaultAspectRatio, settings.defaultResolution]);
-
-  const refreshStatus = async () => {
     try {
       const { payload } = await requestApi("/status");
       setStatus(payload);
       setMessage("");
     } catch (error) {
       setMessage(`Не удалось получить статус: ${error.message || error}`);
+    } finally {
+      setRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    setAspectRatio(settings.defaultAspectRatio || ASPECT_RATIOS[0]);
+    setResolution(settings.defaultResolution || RESOLUTIONS[0]);
+  }, [settings.defaultAspectRatio, settings.defaultResolution]);
+
+  useEffect(() => {
+    if (!status?.progress?.active) {
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
+      refreshStatus();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [refreshStatus, status?.progress?.active]);
 
   const updatePrompt = (index, value) => {
     const next = [...prompts];
@@ -183,9 +200,18 @@ function GeneratePage() {
             <p className="eyebrow">Мониторинг</p>
             <h2>Активные и завершённые генерации</h2>
           </div>
-          <button className="ghost" onClick={refreshStatus}>
-            Обновить
-          </button>
+          <div className="inline-status">
+            <span className="muted">
+              {refreshing
+                ? "Обновление статуса..."
+                : status?.progress?.active
+                  ? "Есть активные задачи"
+                  : "Нет активных задач"}
+            </span>
+            <button className="ghost" onClick={refreshStatus} disabled={refreshing}>
+              Обновить
+            </button>
+          </div>
         </header>
         {status ? (
           <>
