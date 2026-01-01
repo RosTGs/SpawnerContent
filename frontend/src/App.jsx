@@ -5,6 +5,7 @@ import GeneratePage from "./pages/GeneratePage.jsx";
 import ProjectsPage from "./pages/ProjectsPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 import TemplatesPage from "./pages/TemplatesPage.jsx";
+import TestDiagnosticsLauncher from "./TestDiagnosticsLauncher.jsx";
 
 const navLinks = [
   { to: "/main", label: "Главная" },
@@ -41,6 +42,8 @@ function AppLayout() {
       <main className="page">
         <Outlet />
       </main>
+
+      <TestDiagnosticsLauncher />
     </div>
   );
 }

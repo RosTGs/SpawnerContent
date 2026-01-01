@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
+import sys
+import time
 from datetime import datetime
 import urllib.parse
 import urllib.request
@@ -491,6 +494,12 @@ def create_app() -> Flask:
     def status() -> object:
         return jsonify(_status_payload())
 
+    @app.post("/api/tests/run")
+    def api_run_tests() -> object:
+        result = _run_backend_tests()
+        status_code = 200 if result.get("exit_code", 1) == 0 else 500
+        return jsonify(result), status_code
+
     @app.get("/api/projects")
     def api_projects() -> object:
         _sync_relations()
@@ -769,7 +778,7 @@ def create_app() -> Flask:
         _settings.background_references = merged_background_refs
         _settings.detail_references = merged_detail_refs
         if background_refs or detail_refs:
-            save_settings(_settings)
+            save_settings(_settings, SETTINGS_FILE)
 
         if not api_key:
             return jsonify({"error": "Укажите Gemini API ключ в настройках или в запросе перед запуском генерации."}), 400
@@ -820,7 +829,7 @@ def create_app() -> Flask:
             background_references=background_references or _settings.background_references,
             detail_references=detail_references or _settings.detail_references,
         )
-        save_settings(_settings)
+        save_settings(_settings, SETTINGS_FILE)
         lang = _resolve_language()
         return jsonify(
             {
@@ -880,7 +889,7 @@ def create_app() -> Flask:
         if not _remove_reference(reference_path, target_list):
             return jsonify({"error": "Референс не найден среди сохранённых."}), 404
 
-        save_settings(_settings)
+        save_settings(_settings, SETTINGS_FILE)
         _delete_reference_file(reference_path)
         return jsonify({"message": "Референс удалён."})
 
@@ -970,6 +979,49 @@ def create_app() -> Flask:
         return send_from_directory(DEFAULT_OUTPUT_DIR, filename)
 
     return app
+
+
+def _run_backend_tests(tests_path: Path | None = None) -> dict[str, object]:
+    target = Path(tests_path) if tests_path else Path(__file__).resolve().parent.parent / "tests"
+    start = time.perf_counter()
+
+    if not target.exists():
+        return {
+            "exit_code": 0,
+            "stdout": f"Каталог тестов не найден: {target}",
+            "stderr": "",
+            "duration": 0.0,
+        }
+
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        str(target),
+        "--disable-warnings",
+        "--maxfail=1",
+        "--color=no",
+    ]
+
+    try:
+        completed = subprocess.run(
+            command, capture_output=True, text=True, cwd=target.parent, timeout=120
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "exit_code": 1,
+            "stdout": "",
+            "stderr": str(exc),
+            "duration": round(time.perf_counter() - start, 3),
+        }
+
+    return {
+        "exit_code": int(completed.returncode),
+        "stdout": completed.stdout.strip(),
+        "stderr": completed.stderr.strip(),
+        "duration": round(time.perf_counter() - start, 3),
+    }
 
 
 def _get_request_data() -> dict[str, object]:
