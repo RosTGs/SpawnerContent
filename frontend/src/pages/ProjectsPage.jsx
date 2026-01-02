@@ -57,6 +57,19 @@ function formatDate(value) {
   }
 }
 
+const imageStatusLabels = {
+  pending: "В очереди",
+  generating: "Генерируется",
+  regenerating: "Регенерируется",
+  ready: "Готово",
+  approved: "Апрув",
+  error: "Ошибка",
+};
+
+function getImageStatusLabel(status) {
+  return imageStatusLabels[status] || status || "Нет статуса";
+}
+
 function createDefaultProjectData() {
   return {
     templates: [],
@@ -129,6 +142,8 @@ function ProjectsPage() {
   const [pageLimitMessage, setPageLimitMessage] = useState("");
   const [templateFilter, setTemplateFilter] = useState("");
   const [preview, setPreview] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [historyStatus, setHistoryStatus] = useState({ state: "idle", message: "" });
 
   const sortedProjects = useMemo(
     () =>
@@ -202,6 +217,11 @@ function ProjectsPage() {
     return () => clearInterval(interval);
   }, [currentProject?.id, syncSupported]);
 
+  useEffect(() => {
+    if (!detailOpen || activeTab !== "history") return;
+    loadHistory();
+  }, [activeTab, detailOpen, loadHistory]);
+
   const loadProjects = async () => {
     setLoading(true);
     setError("");
@@ -217,6 +237,25 @@ function ProjectsPage() {
       setLoading(false);
     }
   };
+
+  const loadHistory = useCallback(async () => {
+    setHistoryStatus({ state: "loading", message: "" });
+    try {
+      const { payload } = await requestApi("/history");
+      const items = payload?.images || [];
+      setHistory(items);
+      setHistoryStatus({
+        state: "success",
+        message: items.length ? `Всего изображений: ${items.length}` : "Изображений пока нет",
+      });
+    } catch (apiError) {
+      setHistory([]);
+      setHistoryStatus({
+        state: "error",
+        message: apiError.message || "Не удалось загрузить историю",
+      });
+    }
+  }, []);
 
   const persistProjectDetails = async (projectId, data) => {
     if (!projectId) return;
@@ -1163,39 +1202,62 @@ function ProjectsPage() {
                 <div className="section-head">
                   <div>
                     <p className="eyebrow">История</p>
-                    <h3>Предыдущие версии и собранные PDF</h3>
+                    <h3>Все изображения, которые вы генерировали</h3>
+                  </div>
+                  <div className={`status-chip ${historyStatus.state}`} role="status">
+                    {historyStatus.state === "loading" && "Загружаем историю..."}
+                    {historyStatus.state === "success" && historyStatus.message}
+                    {historyStatus.state === "error" && historyStatus.message}
+                    {historyStatus.state === "idle" && "История не загружалась"}
                   </div>
                 </div>
 
-                {selectedProjectData.archive.length ? (
-                  <ul className="stack-list">
-                    {selectedProjectData.archive.map((entry) => (
-                      <li key={entry.id} className="stack-item">
-                        <div>
-                          <p className="template-name">{entry.note || "Генерация"}</p>
-                          <p className="muted">
-                            {entry.pages.length} страниц · сохранено {formatDate(entry.createdAt)}
-                          </p>
-                        </div>
-                        <span className="badge badge-pending">Архив</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="muted">Пока нет прошлых генераций. После перегенерации предыдущий вариант появится здесь.</p>
+                {historyStatus.state === "loading" && <p className="muted">Подождите, собираем список...</p>}
+
+                {historyStatus.state === "error" && (
+                  <p className="status error">{historyStatus.message}</p>
                 )}
 
-                {selectedProjectData.pdfVersion ? (
-                  <div className="pdf-block">
-                    <div>
-                      <p className="eyebrow">PDF</p>
-                      <p className="template-name">Сборка от {formatDate(selectedProjectData.pdfVersion.createdAt)}</p>
-                      <p className="muted">Страниц: {selectedProjectData.pdfVersion.pages}</p>
-                    </div>
-                    <span className="badge badge-success">Готово</span>
+                {history.length ? (
+                  <div className="history-grid">
+                    {history.map((item) => (
+                      <article
+                        key={`${item.generationId}-${item.sheetIndex}-${item.filename}`}
+                        className="history-card"
+                      >
+                        {item.assetUrl ? (
+                          <img
+                            src={item.assetUrl}
+                            alt={`Генерация ${item.generationId}, лист ${item.sheetIndex + 1}`}
+                            className="history-thumb"
+                          />
+                        ) : (
+                          <div className="history-thumb history-thumb__placeholder">Нет превью</div>
+                        )}
+                        <div className="history-meta">
+                          <p className="template-name">
+                            Генерация #{item.generationId} — Лист {item.sheetIndex + 1}
+                          </p>
+                          <p className="muted">
+                            {item.createdAt ? `Создано ${formatDate(item.createdAt)}` : "Дата неизвестна"}
+                          </p>
+                          <div className="history-tags">
+                            <span className={`badge badge-${item.status}`}>{getImageStatusLabel(item.status)}</span>
+                            {item.approved && <span className="badge badge-success">Одобрено</span>}
+                          </div>
+                          {item.assetUrl && (
+                            <a className="link" href={item.assetUrl} target="_blank" rel="noreferrer">
+                              Открыть изображение
+                            </a>
+                          )}
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 ) : (
-                  <p className="muted">Нажмите «Собрать PDF» после удачной генерации, чтобы сохранить итоговый документ.</p>
+                  historyStatus.state !== "loading" && (
+                    <p className="muted">Пока нет сгенерированных изображений. Запустите генерацию, чтобы увидеть историю.</p>
+                  )
                 )}
               </div>
             )}
