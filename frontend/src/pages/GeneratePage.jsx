@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Navigate, useLocation, useParams } from "react-router-dom";
+import { useProject } from "../ProjectContext.jsx";
 import { useSettings } from "../SettingsContext.jsx";
 import { apiBases, downloadApi, requestApi } from "../api/client.js";
 import { ASPECT_RATIOS, RESOLUTIONS } from "../constants/generation.js";
@@ -19,6 +21,9 @@ function normalizeAssetUrl(url) {
 
 function GeneratePage() {
   const { settings } = useSettings();
+  const { selectedProject, setSelectedProject } = useProject();
+  const { id: routeProjectId } = useParams();
+  const location = useLocation();
   const [aspectRatio, setAspectRatio] = useState(settings.defaultAspectRatio || ASPECT_RATIOS[0]);
   const [resolution, setResolution] = useState(settings.defaultResolution || RESOLUTIONS[0]);
   const [prompts, setPrompts] = useState([""]);
@@ -28,7 +33,17 @@ function GeneratePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [downloadState, setDownloadState] = useState({});
 
+  const projectFromState = location.state?.project;
+  const effectiveProject =
+    selectedProject || (routeProjectId && projectFromState?.id === routeProjectId ? projectFromState : null);
+
   const promptList = useMemo(() => prompts.filter(Boolean), [prompts]);
+
+  useEffect(() => {
+    if (projectFromState && (!selectedProject || selectedProject.id !== projectFromState.id)) {
+      setSelectedProject(projectFromState);
+    }
+  }, [projectFromState, selectedProject, setSelectedProject]);
 
   const refreshStatus = useCallback(async () => {
     setRefreshing(true);
@@ -100,6 +115,7 @@ function GeneratePage() {
           aspect_ratio: aspectRatio,
           resolution,
           sheet_prompts: promptList,
+          project_id: effectiveProject.id,
         }),
       });
 
@@ -154,6 +170,10 @@ function GeneratePage() {
 
   const isDownloading = (key) => Boolean(downloadState[key]);
 
+  if (!effectiveProject || (routeProjectId && effectiveProject.id !== routeProjectId)) {
+    return <Navigate to="/project" replace />;
+  }
+
   return (
     <>
       <header className="hero">
@@ -168,6 +188,13 @@ function GeneratePage() {
             Генерация листов листает очередь и возвращает ссылки на финальные ассеты после
             обработки.
           </p>
+          <div className="inline-status">
+            <div>
+              <p className="eyebrow">Текущий проект</p>
+              <p className="muted">Генерация запустится в контексте выбранного проекта.</p>
+            </div>
+            <span className="badge badge-success">{effectiveProject.name}</span>
+          </div>
         </div>
 
         <div className="card">

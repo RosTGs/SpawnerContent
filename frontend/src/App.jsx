@@ -9,7 +9,6 @@ import TestDiagnosticsLauncher from "./TestDiagnosticsLauncher.jsx";
 
 const navLinks = [
   { to: "/main", label: "Главная" },
-  { to: "/generate", label: "Генерация" },
   { to: "/project", label: "Проекты" },
   { to: "/templates", label: "Шаблоны" },
   { to: "/assets", label: "Ассеты" },
@@ -51,14 +50,15 @@ function AppLayout() {
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<AppLayout />}>
-        <Route index element={<Navigate to="/main" replace />} />
-        <Route path="/main" element={<DashboardPage />} />
-        <Route path="/generate" element={<GeneratePage />} />
-        <Route path="/project" element={<ProjectsPage />} />
-        <Route path="/templates" element={<TemplatesPage />} />
-        <Route path="/assets" element={<AssetsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/" element={<AppLayout />}>
+          <Route index element={<Navigate to="/main" replace />} />
+          <Route path="/main" element={<DashboardPage />} />
+          <Route path="/generate" element={<Navigate to="/project" replace />} />
+          <Route path="/project" element={<ProjectsPage />} />
+          <Route path="/project/:id/generate" element={<GeneratePage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/assets" element={<AssetsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   );
