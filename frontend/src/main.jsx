@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
+import { AuthProvider } from "./AuthContext.jsx";
 import { ProjectProvider } from "./ProjectContext.jsx";
 import { SettingsProvider } from "./SettingsContext.jsx";
 import "./styles.css";
@@ -11,11 +12,13 @@ const root = createRoot(container);
 root.render(
   <React.StrictMode>
     <BrowserRouter>
-      <SettingsProvider>
-        <ProjectProvider>
-          <App />
-        </ProjectProvider>
-      </SettingsProvider>
+      <AuthProvider>
+        <SettingsProvider>
+          <ProjectProvider>
+            <App />
+          </ProjectProvider>
+        </SettingsProvider>
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );
