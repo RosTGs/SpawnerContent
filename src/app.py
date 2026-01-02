@@ -973,7 +973,7 @@ def create_app() -> Flask:
             download_name=archive_path.name,
         )
 
-    @app.route("/assets/<path:filename>")
+    @app.get("/api/assets/<path:filename>")
     def serve_asset(filename: str):  # type: ignore[override]
         ensure_output_dir(DEFAULT_OUTPUT_DIR)
         return send_from_directory(DEFAULT_OUTPUT_DIR, filename)

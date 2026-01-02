@@ -1,7 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettings } from "../SettingsContext.jsx";
-import { downloadApi, requestApi } from "../api/client.js";
+import { apiBases, downloadApi, requestApi } from "../api/client.js";
 import { ASPECT_RATIOS, RESOLUTIONS } from "../constants/generation.js";
+
+function normalizeAssetUrl(url) {
+  if (!url) return null;
+
+  if (/^https?:\/\//i.test(url) || url.startsWith("/api/")) {
+    return url;
+  }
+
+  const base = apiBases[0] || "/api";
+  const baseWithoutSlash = base.replace(/\/$/, "");
+  const suffix = url.startsWith("/") ? url : `/${url}`;
+
+  return `${baseWithoutSlash}${suffix}`;
+}
 
 function GeneratePage() {
   const { settings } = useSettings();
@@ -296,25 +310,29 @@ function GeneratePage() {
                     </button>
                   </div>
                   <ul className="image-list">
-                    {generation.images.map((image) => (
-                      <li key={image.index}>
-                        <div className="image-row">
-                          <span>
-                            Карточка {image.index + 1} — {image.status}
-                          </span>
-                          <span className={image.approved ? "approved" : "muted"}>
-                            {image.approved ? "апрув" : "ожидает"}
-                          </span>
-                        </div>
-                        {image.asset_url ? (
-                          <a className="link" href={image.asset_url} target="_blank" rel="noreferrer">
-                            Открыть файл ({image.filename})
-                          </a>
-                        ) : (
-                          <span className="muted">файл появится после генерации</span>
-                        )}
-                      </li>
-                    ))}
+                    {generation.images.map((image) => {
+                      const assetUrl = normalizeAssetUrl(image.asset_url);
+
+                      return (
+                        <li key={image.index}>
+                          <div className="image-row">
+                            <span>
+                              Карточка {image.index + 1} — {image.status}
+                            </span>
+                            <span className={image.approved ? "approved" : "muted"}>
+                              {image.approved ? "апрув" : "ожидает"}
+                            </span>
+                          </div>
+                          {assetUrl ? (
+                            <a className="link" href={assetUrl} target="_blank" rel="noreferrer">
+                              Открыть файл ({image.filename})
+                            </a>
+                          ) : (
+                            <span className="muted">файл появится после генерации</span>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </article>
               ))}
