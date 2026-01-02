@@ -19,6 +19,32 @@ function normalizeAssetUrl(url) {
   return `${baseWithoutSlash}${suffix}`;
 }
 
+const imageStatusLabels = {
+  generating: "Генерируется",
+  regenerating: "Перегенерация",
+  ready: "Готово",
+  approved: "Готово и одобрено",
+  error: "Ошибка",
+};
+
+function getImageStatusLabel(status) {
+  return imageStatusLabels[status] || status || "Нет статуса";
+}
+
+function getImageStatusMessage(status, hasAsset) {
+  if (status === "ready" || status === "approved") {
+    return hasAsset
+      ? "Генерация завершена — изображение готово."
+      : "Генерация завершена, ожидаем появление файла.";
+  }
+
+  if (status === "error") {
+    return "Генерация завершилась с ошибкой.";
+  }
+
+  return "Генерация листа выполняется. Результат появится автоматически.";
+}
+
 function getFormStorageKey(projectId) {
   return projectId ? `generationForm:${projectId}` : null;
 }
@@ -358,66 +384,81 @@ function GeneratePage() {
               <span>Готово: {status.progress.completed}</span>
               <span>В работе: {status.progress.active}</span>
             </div>
-            <div className="grid">
-              {status.generations.map((generation) => (
-                <article className="card generation" key={generation.id}>
-                  <header className="generation-head">
-                    <div>
-                      <p className="eyebrow">#{generation.id}</p>
-                      <h3>{generation.status_label}</h3>
+            {status.generations.length ? (
+              <div className="grid">
+                {status.generations.map((generation) => (
+                  <article className="card generation" key={generation.id}>
+                    <header className="generation-head">
+                      <div>
+                        <p className="eyebrow">#{generation.id}</p>
+                        <h3>{generation.status_label}</h3>
+                      </div>
+                      <span className={`badge badge-${generation.status}`}>
+                        {generation.ready}/{generation.total}
+                      </span>
+                    </header>
+                    <div className="generation-actions">
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => downloadPdf(generation)}
+                        disabled={!generation.approved || isDownloading(`${generation.id}-pdf`)}
+                      >
+                        {isDownloading(`${generation.id}-pdf`) ? "Готовлю PDF..." : "Скачать PDF"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => downloadImages(generation)}
+                        disabled={generation.ready === 0 || isDownloading(`${generation.id}-images`)}
+                      >
+                        {isDownloading(`${generation.id}-images`)
+                          ? "Упаковываю файлы..."
+                          : "Скачать изображения"}
+                      </button>
                     </div>
-                    <span className={`badge badge-${generation.status}`}>
-                      {generation.ready}/{generation.total}
-                    </span>
-                  </header>
-                  <div className="generation-actions">
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => downloadPdf(generation)}
-                      disabled={!generation.approved || isDownloading(`${generation.id}-pdf`)}
-                    >
-                      {isDownloading(`${generation.id}-pdf`) ? "Готовлю PDF..." : "Скачать PDF"}
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => downloadImages(generation)}
-                      disabled={generation.ready === 0 || isDownloading(`${generation.id}-images`)}
-                    >
-                      {isDownloading(`${generation.id}-images`)
-                        ? "Упаковываю файлы..."
-                        : "Скачать изображения"}
-                    </button>
-                  </div>
-                  <ul className="image-list">
-                    {generation.images.map((image) => {
-                      const assetUrl = normalizeAssetUrl(image.asset_url);
+                    {generation.images.length ? (
+                      <ul className="image-list">
+                        {generation.images.map((image) => {
+                          const assetUrl = normalizeAssetUrl(image.asset_url);
+                          const statusLabel = getImageStatusLabel(image.status);
+                          const statusMessage = getImageStatusMessage(image.status, Boolean(assetUrl));
 
-                      return (
-                        <li key={image.index}>
-                          <div className="image-row">
-                            <span>
-                              Карточка {image.index + 1} — {image.status}
-                            </span>
-                            <span className={image.approved ? "approved" : "muted"}>
-                              {image.approved ? "апрув" : "ожидает"}
-                            </span>
-                          </div>
-                          {assetUrl ? (
-                            <a className="link" href={assetUrl} target="_blank" rel="noreferrer">
-                              Открыть файл ({image.filename})
-                            </a>
-                          ) : (
-                            <span className="muted">файл появится после генерации</span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </article>
-              ))}
-            </div>
+                          return (
+                            <li key={image.index}>
+                              <div className="image-row">
+                                <span>
+                                  Карточка {image.index + 1} — {statusLabel}
+                                </span>
+                                <span className={image.approved ? "approved" : "muted"}>
+                                  {image.approved ? "апрув" : "ожидает"}
+                                </span>
+                              </div>
+                              {assetUrl ? (
+                                <a className="link" href={assetUrl} target="_blank" rel="noreferrer">
+                                  Открыть файл ({image.filename})
+                                </a>
+                              ) : (
+                                <span className="muted">Файл появится после завершения генерации</span>
+                              )}
+                              <p className="muted">{statusMessage}</p>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="muted">
+                        Генерация листов запущена. Как только задачи завершатся, здесь появятся изображения.
+                      </p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">
+                Результатов генераций пока нет. Запустите новую генерацию, чтобы увидеть карточки листов и их статус.
+              </p>
+            )}
           </>
         ) : (
           <p className="muted">Запустите сборку фронтенда и API, чтобы увидеть прогресс.</p>
