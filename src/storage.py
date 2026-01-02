@@ -19,6 +19,7 @@ DEFAULT_DESKTOP_PDF = Path.home() / "Desktop" / "gemini_output.pdf"
 SETTINGS_FILE = DEFAULT_OUTPUT_DIR / "settings.json"
 DATA_DIR = DEFAULT_OUTPUT_DIR / "data"
 PROJECTS_FILE = DATA_DIR / "projects.json"
+PROJECT_DETAILS_FILE = DATA_DIR / "project_details.json"
 TEMPLATES_FILE = DATA_DIR / "templates.json"
 ASSETS_FILE = DATA_DIR / "assets.json"
 GENERATIONS_FILE = DATA_DIR / "generations.json"
@@ -247,12 +248,49 @@ def _save_records(path: Path, records: List[dict]) -> Path:
     return path
 
 
+def _load_mapping(path: Path) -> Dict[str, object]:
+    ensure_data_dir(path.parent)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except json.JSONDecodeError:
+        return {}
+    return {}
+
+
+def _save_mapping(path: Path, mapping: Dict[str, object]) -> Path:
+    ensure_data_dir(path.parent)
+    path.write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
 def load_projects(path: Path = PROJECTS_FILE) -> List[ProjectRecord]:
     return [ProjectRecord.from_dict(item) for item in _load_records(path)]
 
 
 def save_projects(projects: List[ProjectRecord], path: Path = PROJECTS_FILE) -> Path:
     return _save_records(path, [asdict(project) for project in projects])
+
+
+def load_project_details(path: Path = PROJECT_DETAILS_FILE) -> Dict[int, dict]:
+    raw = _load_mapping(path)
+    normalized: Dict[int, dict] = {}
+    for key, value in raw.items():
+        try:
+            project_id = int(key)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, dict):
+            normalized[project_id] = value
+    return normalized
+
+
+def save_project_details(details: Dict[int, dict], path: Path = PROJECT_DETAILS_FILE) -> Path:
+    prepared = {str(key): value for key, value in details.items()}
+    return _save_mapping(path, prepared)
 
 
 def load_templates(path: Path = TEMPLATES_FILE) -> List[TemplateRecord]:

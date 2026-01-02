@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { requestApi } from "../api/client.js";
 import { useProject } from "../ProjectContext.jsx";
@@ -74,23 +74,36 @@ function createDefaultProjectData() {
     status: "idle",
     statusNote: "",
     pdfVersion: null,
+    updatedAt: new Date().toISOString(),
   };
 }
 
-const STORAGE_KEYS = {
-  projectDetails: "projects:details",
-};
-
-const loadStoredJson = (key, fallback) => {
-  if (typeof window === "undefined") return fallback;
-
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (storageError) {
-    return fallback;
+function normalizeProjectData(data) {
+  if (!data || typeof data !== "object") {
+    return createDefaultProjectData();
   }
-};
+
+  const normalizePages = Array.isArray(data.pages)
+    ? data.pages.map((page, index) => ({
+        id: page.id || `page-${index + 1}`,
+        title: page.title || "",
+        body: page.body || "",
+        image: page.image || "",
+      }))
+    : createDefaultProjectData().pages;
+
+  return {
+    templates: Array.isArray(data.templates) ? data.templates : [],
+    assets: Array.isArray(data.assets) ? data.assets : [],
+    pages: normalizePages.length ? normalizePages : createDefaultProjectData().pages,
+    generated: data.generated || null,
+    archive: Array.isArray(data.archive) ? data.archive : [],
+    status: data.status || "idle",
+    statusNote: data.statusNote || "",
+    pdfVersion: data.pdfVersion || null,
+    updatedAt: data.updatedAt || new Date().toISOString(),
+  };
+}
 
 function ProjectsPage() {
   const [projects, setProjects] = useState([]);
@@ -100,10 +113,10 @@ function ProjectsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "", tags: "" });
-  const [projectDetails, setProjectDetails] = useState(() => {
-    const stored = loadStoredJson(STORAGE_KEYS.projectDetails, {});
-    return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
-  });
+  const [projectDetails, setProjectDetails] = useState({});
+  const [detailStatus, setDetailStatus] = useState({ state: "idle", message: "" });
+  const [pollingError, setPollingError] = useState("");
+  const syncSupported = useCallback((projectId) => /^(\d+)$/.test(String(projectId)), []);
   const { selectedProject, setSelectedProject } = useProject();
   const [activeTab, setActiveTab] = useState("content");
   const [detailOpen, setDetailOpen] = useState(false);
@@ -133,10 +146,22 @@ function ProjectsPage() {
   );
 
   const selectedProjectData = selectedProjectFromList
-    ? projectDetails[selectedProjectFromList.id] || createDefaultProjectData()
+    ? normalizeProjectData(projectDetails[selectedProjectFromList.id] || createDefaultProjectData())
     : null;
 
   const currentProject = selectedProjectFromList;
+
+  const detailStatusClass = (() => {
+    if (detailStatus.state === "error") return "error";
+    if (detailStatus.state === "saving" || detailStatus.state === "loading") return "pending";
+    if (detailStatus.state === "synced") return "success";
+    return "idle";
+  })();
+
+  const detailStatusText = detailStatus.message
+    || (detailStatus.state === "idle"
+      ? "Изменения не выполнялись"
+      : "Состояние неизвестно");
 
   useEffect(() => {
     loadProjects();
@@ -151,27 +176,31 @@ function ProjectsPage() {
 
     const projectToSelect = selectedExists ? currentProject : sortedProjects[0] || null;
 
-    if (projectToSelect && (!selectedExists || !projectDetails[projectToSelect.id])) {
-      setProjectDetails((prev) => ({
-        ...prev,
-        [projectToSelect.id]: prev[projectToSelect.id] || createDefaultProjectData(),
-      }));
-    }
-
     if (!selectedExists && projectToSelect) {
       setSelectedProject(projectToSelect);
     }
-  }, [currentProject, projectDetails, setSelectedProject, sortedProjects]);
+  }, [currentProject, setSelectedProject, sortedProjects]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      localStorage.setItem(STORAGE_KEYS.projectDetails, JSON.stringify(projectDetails));
-    } catch (storageError) {
-      /* noop */
+    if (!currentProject?.id) return;
+    if (!syncSupported(currentProject.id)) {
+      setDetailStatus({ state: "error", message: "Синхронизация доступна только для серверных проектов" });
+      return;
     }
-  }, [projectDetails]);
+    setPollingError("");
+    setDetailStatus({ state: "loading", message: "Загружаем данные проекта..." });
+    fetchProjectDetails(currentProject.id);
+  }, [currentProject?.id, syncSupported]);
+
+  useEffect(() => {
+    if (!currentProject?.id || !syncSupported(currentProject.id)) return undefined;
+
+    const interval = setInterval(() => {
+      fetchProjectDetails(currentProject.id, { silent: true });
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [currentProject?.id, syncSupported]);
 
   const loadProjects = async () => {
     setLoading(true);
@@ -186,6 +215,67 @@ function ProjectsPage() {
       setProjects(mockProjects.map(normalizeProject));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const persistProjectDetails = async (projectId, data) => {
+    if (!projectId) return;
+    if (!syncSupported(projectId)) {
+      const message = "Синхронизация доступна только для серверных проектов";
+      setDetailStatus({ state: "error", message });
+      setPollingError(message);
+      return;
+    }
+    setDetailStatus({ state: "saving", message: "Сохраняем данные проекта..." });
+
+    try {
+      await requestApi(`/projects/${projectId}/data`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      setDetailStatus({ state: "synced", message: "Сохранено на сервере" });
+      setPollingError("");
+    } catch (saveError) {
+      setDetailStatus({
+        state: "error",
+        message: saveError.message || "Не удалось сохранить данные проекта",
+      });
+      setPollingError(saveError.message || String(saveError));
+    }
+  };
+
+  const fetchProjectDetails = async (projectId, { silent = false } = {}) => {
+    if (!projectId) return;
+    if (!syncSupported(projectId)) {
+      const message = "Синхронизация доступна только для серверных проектов";
+      setDetailStatus({
+        state: "error",
+        message,
+      });
+      setPollingError(message);
+      return;
+    }
+    if (!silent) {
+      setDetailStatus({ state: "loading", message: "Загружаем данные проекта..." });
+    }
+
+    try {
+      const { payload } = await requestApi(`/projects/${projectId}/data`);
+      const normalized = normalizeProjectData(payload?.data);
+      setProjectDetails((prev) => ({ ...prev, [projectId]: normalized }));
+      if (!silent) {
+        setDetailStatus({ state: "synced", message: "Данные синхронизированы с сервером" });
+      }
+      setPollingError("");
+    } catch (fetchError) {
+      if (!silent || detailStatus.state !== "saving") {
+        setDetailStatus({
+          state: "error",
+          message: fetchError.message || "Не удалось загрузить данные проекта",
+        });
+      }
+      setPollingError(fetchError.message || String(fetchError));
     }
   };
 
@@ -260,10 +350,17 @@ function ProjectsPage() {
   };
 
   const updateProjectData = (projectId, updater) => {
+    let nextState = null;
     setProjectDetails((prev) => {
-      const current = prev[projectId] || createDefaultProjectData();
-      return { ...prev, [projectId]: updater(current) };
+      const current = normalizeProjectData(prev[projectId] || createDefaultProjectData());
+      nextState = normalizeProjectData(updater(current));
+      nextState.updatedAt = new Date().toISOString();
+      return { ...prev, [projectId]: nextState };
     });
+
+    if (projectId && nextState) {
+      persistProjectDetails(projectId, nextState);
+    }
   };
 
   const updateInput = (field, value) => {
@@ -653,12 +750,20 @@ function ProjectsPage() {
                 </p>
               </div>
               <div className="actions">
-                <div className="status-chip success">Сохранено локально</div>
+                <div className={`status-chip ${detailStatusClass}`} role="status">
+                  {detailStatusText}
+                </div>
                 <button className="ghost" type="button" onClick={closeProjectWindow} aria-label="Закрыть">
                   Закрыть
                 </button>
               </div>
             </header>
+
+            {pollingError && (
+              <p className="muted" style={{ color: "var(--red-500)", margin: "0 1rem" }}>
+                Ошибка синхронизации: {pollingError}. Проверьте сеть или повторите попытку.
+              </p>
+            )}
 
             <div className="tab-row">
               <button
