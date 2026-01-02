@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { useProject } from "../ProjectContext.jsx";
 
 const apiBases = (() => {
   const candidates = ["/api"];
@@ -116,7 +118,6 @@ function createDefaultProjectData() {
 
 const STORAGE_KEYS = {
   projectDetails: "projects:details",
-  selectedProject: "projects:selected",
 };
 
 const loadStoredJson = (key, fallback) => {
@@ -138,14 +139,11 @@ function ProjectsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "", tags: "" });
-  const [selectedProjectId, setSelectedProjectId] = useState(() => {
-    const stored = loadStoredJson(STORAGE_KEYS.selectedProject, null);
-    return typeof stored === "string" && stored.trim() ? stored : null;
-  });
   const [projectDetails, setProjectDetails] = useState(() => {
     const stored = loadStoredJson(STORAGE_KEYS.projectDetails, {});
     return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
   });
+  const { selectedProject, setSelectedProject } = useProject();
   const [activeTab, setActiveTab] = useState("content");
   const [detailOpen, setDetailOpen] = useState(false);
   const [templateCatalog, setTemplateCatalog] = useState([]);
@@ -166,14 +164,18 @@ function ProjectsPage() {
     [projects],
   );
 
-  const selectedProject = useMemo(
+  const selectedProjectId = selectedProject?.id || null;
+
+  const selectedProjectFromList = useMemo(
     () => sortedProjects.find((project) => project.id === selectedProjectId) || null,
     [sortedProjects, selectedProjectId],
   );
 
-  const selectedProjectData = selectedProject
-    ? projectDetails[selectedProject.id] || createDefaultProjectData()
+  const selectedProjectData = selectedProjectFromList
+    ? projectDetails[selectedProjectFromList.id] || createDefaultProjectData()
     : null;
+
+  const currentProject = selectedProjectFromList;
 
   useEffect(() => {
     loadProjects();
@@ -184,21 +186,21 @@ function ProjectsPage() {
     if (!sortedProjects.length) return;
 
     const selectedExists =
-      selectedProjectId && sortedProjects.some((project) => project.id === selectedProjectId);
+      currentProject && sortedProjects.some((project) => project.id === currentProject.id);
 
-    const projectToSelect = selectedExists ? selectedProjectId : sortedProjects[0]?.id;
+    const projectToSelect = selectedExists ? currentProject : sortedProjects[0] || null;
 
-    if (!selectedExists || !projectDetails[projectToSelect]) {
+    if (projectToSelect && (!selectedExists || !projectDetails[projectToSelect.id])) {
       setProjectDetails((prev) => ({
         ...prev,
-        [projectToSelect]: prev[projectToSelect] || createDefaultProjectData(),
+        [projectToSelect.id]: prev[projectToSelect.id] || createDefaultProjectData(),
       }));
     }
 
     if (!selectedExists && projectToSelect) {
-      setSelectedProjectId(projectToSelect);
+      setSelectedProject(projectToSelect);
     }
-  }, [projectDetails, selectedProjectId, sortedProjects]);
+  }, [currentProject, projectDetails, setSelectedProject, sortedProjects]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -209,18 +211,6 @@ function ProjectsPage() {
       /* noop */
     }
   }, [projectDetails]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      if (selectedProjectId) {
-        localStorage.setItem(STORAGE_KEYS.selectedProject, JSON.stringify(selectedProjectId));
-      }
-    } catch (storageError) {
-      /* noop */
-    }
-  }, [selectedProjectId]);
 
   const loadProjects = async () => {
     setLoading(true);
@@ -268,7 +258,7 @@ function ProjectsPage() {
       const created = normalizeProject(responsePayload?.project || responsePayload || payload);
       setProjects((prev) => [created, ...prev]);
       setProjectDetails((prev) => ({ ...prev, [created.id]: createDefaultProjectData() }));
-      setSelectedProjectId(created.id);
+      setSelectedProject(created);
       setDetailOpen(true);
       setActiveTab("content");
       setDialogOpen(false);
@@ -277,7 +267,7 @@ function ProjectsPage() {
       const mockProject = normalizeProject({ ...payload, id: `mock-${Date.now()}` });
       setProjects((prev) => [mockProject, ...prev]);
       setProjectDetails((prev) => ({ ...prev, [mockProject.id]: createDefaultProjectData() }));
-      setSelectedProjectId(mockProject.id);
+      setSelectedProject(mockProject);
       setDetailOpen(true);
       setActiveTab("content");
       setError(`Не удалось сохранить проект: ${apiError.message || apiError}. Добавлен мок.`);
@@ -288,7 +278,10 @@ function ProjectsPage() {
   };
 
   const selectProject = (projectId) => {
-    setSelectedProjectId(projectId);
+    const foundProject = sortedProjects.find((project) => project.id === projectId);
+    if (foundProject) {
+      setSelectedProject(foundProject);
+    }
     setActiveTab("content");
     setProjectDetails((prev) => ({
       ...prev,
@@ -332,14 +325,14 @@ function ProjectsPage() {
   const addTemplate = (event) => {
     event.preventDefault();
 
-    if (!selectedProject || !inputs.templateIds.length) return;
+    if (!currentProject || !inputs.templateIds.length) return;
 
     const selectedTemplates = templateCatalog.filter((item) =>
       inputs.templateIds.includes(String(item.id)),
     );
     if (!selectedTemplates.length) return;
 
-    updateProjectData(selectedProject.id, (data) => {
+    updateProjectData(currentProject.id, (data) => {
       const existingIds = new Set(data.templates.map((item) => item.id));
       const prepared = selectedTemplates
         .filter((template) => !existingIds.has(template.id))
@@ -363,12 +356,12 @@ function ProjectsPage() {
 
   const addAsset = (event) => {
     event.preventDefault();
-    if (!selectedProject || !inputs.assetId) return;
+    if (!currentProject || !inputs.assetId) return;
 
     const asset = assetCatalog.find((item) => String(item.id) === inputs.assetId);
     if (!asset) return;
 
-    updateProjectData(selectedProject.id, (data) => ({
+    updateProjectData(currentProject.id, (data) => ({
       ...data,
       assets: data.assets.some((item) => item.id === asset.id)
         ? data.assets
@@ -387,16 +380,16 @@ function ProjectsPage() {
   };
 
   const removeTemplate = (templateId) => {
-    if (!selectedProject) return;
-    updateProjectData(selectedProject.id, (data) => ({
+    if (!currentProject) return;
+    updateProjectData(currentProject.id, (data) => ({
       ...data,
       templates: data.templates.filter((template) => template.id !== templateId),
     }));
   };
 
   const removeAsset = (assetId) => {
-    if (!selectedProject) return;
-    updateProjectData(selectedProject.id, (data) => ({
+    if (!currentProject) return;
+    updateProjectData(currentProject.id, (data) => ({
       ...data,
       assets: data.assets.filter((asset) => asset.id !== assetId),
     }));
@@ -411,7 +404,7 @@ function ProjectsPage() {
     }
 
     setPageLimitMessage("");
-    updateProjectData(selectedProject.id, (data) => ({
+    updateProjectData(currentProject.id, (data) => ({
       ...data,
       pages: [
         ...data.pages,
@@ -426,18 +419,18 @@ function ProjectsPage() {
   };
 
   const updatePageField = (pageId, field, value) => {
-    if (!selectedProject) return;
+    if (!currentProject) return;
 
-    updateProjectData(selectedProject.id, (data) => ({
+    updateProjectData(currentProject.id, (data) => ({
       ...data,
       pages: data.pages.map((page) => (page.id === pageId ? { ...page, [field]: value } : page)),
     }));
   };
 
   const removePage = (pageId) => {
-    if (!selectedProject) return;
+    if (!currentProject) return;
 
-    updateProjectData(selectedProject.id, (data) => {
+    updateProjectData(currentProject.id, (data) => {
       const remaining = data.pages.filter((page) => page.id !== pageId);
       return {
         ...data,
@@ -454,8 +447,8 @@ function ProjectsPage() {
   };
 
   const resetContent = () => {
-    if (!selectedProject) return;
-    updateProjectData(selectedProject.id, () => createDefaultProjectData());
+    if (!currentProject) return;
+    updateProjectData(currentProject.id, () => createDefaultProjectData());
     setPageLimitMessage("");
   };
 
@@ -509,10 +502,10 @@ function ProjectsPage() {
   }, [templateCatalog, templateFilter]);
 
   const generatePages = (isRegeneration = false) => {
-    if (!selectedProject || !selectedProjectData) return;
+    if (!currentProject || !selectedProjectData) return;
     if (!selectedProjectData.pages.length) return;
 
-    updateProjectData(selectedProject.id, (data) => {
+    updateProjectData(currentProject.id, (data) => {
       const archived = data.generated ? [data.generated, ...data.archive] : data.archive;
       const generation = {
         id: crypto.randomUUID(),
@@ -547,9 +540,9 @@ function ProjectsPage() {
   };
 
   const regeneratePage = (pageId) => {
-    if (!selectedProject || !selectedProjectData?.generated) return;
+    if (!currentProject || !selectedProjectData?.generated) return;
 
-    updateProjectData(selectedProject.id, (data) => {
+    updateProjectData(currentProject.id, (data) => {
       if (!data.generated) return data;
 
       const sourcePage = data.pages.find((page) => page.id === pageId);
@@ -595,9 +588,9 @@ function ProjectsPage() {
   const closePreview = () => setPreview(null);
 
   const assemblePdf = () => {
-    if (!selectedProject || !selectedProjectData?.generated) return;
+    if (!currentProject || !selectedProjectData?.generated) return;
 
-    updateProjectData(selectedProject.id, (data) => ({
+    updateProjectData(currentProject.id, (data) => ({
       ...data,
       pdfVersion: {
         id: crypto.randomUUID(),
@@ -635,7 +628,7 @@ function ProjectsPage() {
             {sortedProjects.map((project) => (
               <article
                 key={project.id}
-                className={`card project-card ${selectedProjectId === project.id ? "active" : ""}`}
+                className={`card project-card ${currentProject?.id === project.id ? "active" : ""}`}
                 onClick={() => selectProject(project.id)}
               >
                 <header className="project-head">
@@ -670,7 +663,7 @@ function ProjectsPage() {
                     Открыть
                   </button>
                 </div>
-                {selectedProjectId === project.id && <span className="badge badge-success">Активен</span>}
+                {currentProject?.id === project.id && <span className="badge badge-success">Активен</span>}
               </article>
             ))}
           </div>
@@ -680,7 +673,7 @@ function ProjectsPage() {
       </section>
 
 
-      {detailOpen && selectedProject && selectedProjectData && (
+      {detailOpen && currentProject && selectedProjectData && (
         <div className="modal-backdrop" role="presentation" onClick={closeProjectWindow}>
           <div
             className="card modal project-window"
@@ -690,7 +683,7 @@ function ProjectsPage() {
           >
             <header className="section-head project-window__bar">
               <div>
-                <p className="eyebrow">{selectedProject.name}</p>
+                <p className="eyebrow">{currentProject.name}</p>
                 <h2>Контент и генерация внутри проекта</h2>
                 <p className="muted">
                   Каждый проект хранит свои шаблоны, ассеты и страницы. Генерация привязана к текущему
@@ -973,6 +966,13 @@ function ProjectsPage() {
                 </div>
 
                 <div className="actions">
+                  <Link
+                    className="primary"
+                    to={`/project/${currentProject.id}/generate`}
+                    state={{ project: currentProject, projectData: selectedProjectData }}
+                  >
+                    Открыть генерацию
+                  </Link>
                   <button className="primary" onClick={() => generatePages(false)}>
                     Сгенерировать страницы
                   </button>

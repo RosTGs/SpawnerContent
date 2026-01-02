@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
+import { ProjectProvider } from "./ProjectContext.jsx";
 import { SettingsProvider } from "./SettingsContext.jsx";
 import "./styles.css";
 
@@ -11,7 +12,9 @@ root.render(
   <React.StrictMode>
     <BrowserRouter>
       <SettingsProvider>
-        <App />
+        <ProjectProvider>
+          <App />
+        </ProjectProvider>
       </SettingsProvider>
     </BrowserRouter>
   </React.StrictMode>,
