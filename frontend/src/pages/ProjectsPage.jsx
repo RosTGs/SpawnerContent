@@ -3,30 +3,6 @@ import { Link } from "react-router-dom";
 import { requestApi } from "../api/client.js";
 import { useProject } from "../ProjectContext.jsx";
 
-const mockProjects = [
-  {
-    id: "alpha",
-    name: "Каталог ассетов",
-    description: "Основная библиотека UI-элементов и иконок для мобильного приложения.",
-    tags: ["UI", "Mobile"],
-    updatedAt: "2024-05-12T08:30:00Z",
-  },
-  {
-    id: "beta",
-    name: "Маркетинговые материалы",
-    description: "Баннеры и рекламные креативы для предстоящего релиза.",
-    tags: ["Promo", "Design"],
-    updatedAt: "2024-06-02T13:00:00Z",
-  },
-  {
-    id: "gamma",
-    name: "3D-сцены",
-    description: "Набор ассетов и настроек освещения для демонстрационных сцен.",
-    tags: ["3D", "Lighting"],
-    updatedAt: "2024-05-25T17:10:00Z",
-  },
-];
-
 function normalizeProject(project) {
   const normalizedTags = Array.isArray(project?.tags)
     ? project.tags
@@ -231,8 +207,7 @@ function ProjectsPage() {
       const projectList = payload?.projects || payload || [];
       setProjects(projectList.map(normalizeProject));
     } catch (apiError) {
-      setError(`Не удалось загрузить проекты: ${apiError.message || apiError}. Используется мок.`);
-      setProjects(mockProjects.map(normalizeProject));
+      setError(`Не удалось загрузить проекты: ${apiError.message || apiError}. Попробуйте позже.`);
     } finally {
       setLoading(false);
     }
@@ -354,14 +329,8 @@ function ProjectsPage() {
       setDialogOpen(false);
       setFormData({ name: "", description: "", tags: "" });
     } catch (apiError) {
-      const mockProject = normalizeProject({ ...payload, id: `mock-${Date.now()}` });
-      setProjects((prev) => [mockProject, ...prev]);
-      setProjectDetails((prev) => ({ ...prev, [mockProject.id]: createDefaultProjectData() }));
-      setSelectedProject(mockProject);
+      setError(`Не удалось сохранить проект: ${apiError.message || apiError}`);
       setDetailOpen(true);
-      setActiveTab("content");
-      setError(`Не удалось сохранить проект: ${apiError.message || apiError}. Добавлен мок.`);
-      setDialogOpen(false);
     } finally {
       setCreating(false);
     }
