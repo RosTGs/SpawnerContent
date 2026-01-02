@@ -36,6 +36,7 @@ from .storage import (
     DATA_DIR,
     DEFAULT_OUTPUT_DIR,
     GENERATIONS_FILE,
+    PROJECT_DETAILS_FILE,
     PROJECTS_FILE,
     SETTINGS_FILE,
     TEMPLATES_FILE,
@@ -49,12 +50,14 @@ from .storage import (
     ensure_output_dir,
     export_pdf,
     load_assets,
+    load_project_details,
     load_generations,
     load_projects,
     load_settings,
     load_templates,
     new_asset_path,
     save_assets,
+    save_project_details,
     save_generations,
     save_metadata,
     save_projects,
@@ -268,6 +271,27 @@ def _record_from_generation(entry: GenerationEntry) -> GenerationRecord:
     )
 
 
+def _default_project_data() -> dict[str, object]:
+    return {
+        "templates": [],
+        "assets": [],
+        "pages": [
+            {
+                "id": f"page-{int(time.time() * 1000)}",
+                "title": "Страница 1",
+                "body": "",
+                "image": "",
+            }
+        ],
+        "generated": None,
+        "archive": [],
+        "status": "idle",
+        "statusNote": "",
+        "pdfVersion": None,
+        "updatedAt": _timestamp(),
+    }
+
+
 ensure_data_dir(DATA_DIR)
 _settings: Settings = load_settings()
 _channel_lookup: dict[str, object] | None = None
@@ -275,6 +299,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 _projects: list[ProjectRecord] = load_projects(PROJECTS_FILE)
 _templates: list[TemplateRecord] = load_templates(TEMPLATES_FILE)
 _assets: list[AssetRecord] = load_assets(ASSETS_FILE)
+_project_details: dict[int, dict] = load_project_details(PROJECT_DETAILS_FILE)
 _generations: list[GenerationEntry] = [
     _generation_from_record(record) for record in load_generations(GENERATIONS_FILE)
 ]
@@ -359,6 +384,87 @@ def _persist_generations() -> None:
     save_generations([_record_from_generation(entry) for entry in _generations], GENERATIONS_FILE)
 
 
+def _persist_project_details() -> None:
+    save_project_details(_project_details, PROJECT_DETAILS_FILE)
+
+
+def _normalize_project_data(payload: dict[str, object]) -> dict[str, object]:
+    base = _default_project_data()
+
+    def _sanitize_items(key: str) -> list[dict[str, object]]:
+        raw_value = payload.get(key, base.get(key, []))
+        if not isinstance(raw_value, list):
+            return list(base.get(key, []))
+        return [item for item in raw_value if isinstance(item, dict)]
+
+    pages: list[dict[str, object]] = []
+    for index, page in enumerate(_sanitize_items("pages")):
+        pages.append(
+            {
+                "id": str(page.get("id") or f"page-{int(time.time() * 1000) + index}"),
+                "title": str(page.get("title", "")),
+                "body": str(page.get("body", "")),
+                "image": str(page.get("image", "")),
+            }
+        )
+
+    templates: list[dict[str, object]] = []
+    for template in _sanitize_items("templates"):
+        templates.append(
+            {
+                "id": template.get("id"),
+                "name": template.get("name"),
+                "text": template.get("text", ""),
+                "kind": template.get("kind", ""),
+                "description": template.get("description", ""),
+                "assetUrl": template.get("assetUrl") or template.get("asset_url"),
+            }
+        )
+
+    assets: list[dict[str, object]] = []
+    for asset in _sanitize_items("assets"):
+        assets.append(
+            {
+                "id": asset.get("id"),
+                "name": asset.get("name"),
+                "role": asset.get("role", ""),
+                "kind": asset.get("kind", ""),
+            }
+        )
+
+    generated = payload.get("generated") if isinstance(payload.get("generated"), dict) else None
+    archive = _sanitize_items("archive")
+
+    status = str(payload.get("status", base["status"]))
+    status_note = str(payload.get("statusNote", base["statusNote"]))
+    pdf_version = payload.get("pdfVersion") if payload.get("pdfVersion") else None
+    updated_at = str(payload.get("updatedAt") or _timestamp())
+
+    return {
+        "templates": templates,
+        "assets": assets,
+        "pages": pages or base["pages"],
+        "generated": generated,
+        "archive": archive,
+        "status": status,
+        "statusNote": status_note,
+        "pdfVersion": pdf_version,
+        "updatedAt": updated_at,
+    }
+
+
+def _project_data_for(project_id: int, *, create: bool = True) -> dict[str, object]:
+    data = _project_details.get(project_id)
+    if isinstance(data, dict):
+        return data
+    if not create:
+        return {}
+    fresh = _default_project_data()
+    _project_details[project_id] = fresh
+    _persist_project_details()
+    return fresh
+
+
 def _serialize_project(project: ProjectRecord) -> dict[str, object]:
     return {
         "id": project.id,
@@ -373,6 +479,26 @@ def _serialize_project(project: ProjectRecord) -> dict[str, object]:
         "template_ids": project.template_ids,
         "asset_ids": project.asset_ids,
     }
+
+
+def _apply_detail_relations(project: ProjectRecord, details: dict[str, object]) -> None:
+    template_ids: list[int] = []
+    for template in details.get("templates", []):
+        try:
+            template_ids.append(int(template.get("id", 0)))
+        except (TypeError, ValueError):
+            continue
+
+    asset_ids: list[int] = []
+    for asset in details.get("assets", []):
+        try:
+            asset_ids.append(int(asset.get("id", 0)))
+        except (TypeError, ValueError):
+            continue
+
+    project.template_ids = [item for item in sorted(set(template_ids)) if item]
+    project.asset_ids = [item for item in sorted(set(asset_ids)) if item]
+    project.updated_at = _timestamp()
 
 
 def _serialize_template(template: TemplateRecord) -> dict[str, object]:
@@ -724,8 +850,10 @@ def create_app() -> Flask:
         )
         _projects.insert(0, project)
         _next_project_id += 1
+        _project_data_for(project.id)
         _sync_relations()
         _persist_catalogs()
+        _persist_project_details()
         return jsonify({"message": "Проект сохранён", "project": _serialize_project(project)})
 
     @app.put("/api/projects/<int:project_id>")
@@ -762,7 +890,43 @@ def create_app() -> Flask:
         _projects.remove(project)
         _sync_relations()
         _persist_catalogs()
+        if project_id in _project_details:
+            _project_details.pop(project_id, None)
+            _persist_project_details()
         return jsonify({"message": "Проект удалён", "id": project_id})
+
+    @app.get("/api/projects/<int:project_id>/data")
+    def api_project_details(project_id: int) -> object:
+        project = _find_project(project_id)
+        if not project:
+            return jsonify({"error": "Проект не найден"}), 404
+
+        data = _project_data_for(project_id)
+        return jsonify({"project": _serialize_project(project), "data": data})
+
+    @app.put("/api/projects/<int:project_id>/data")
+    def api_save_project_details(project_id: int) -> object:
+        project = _find_project(project_id)
+        if not project:
+            return jsonify({"error": "Проект не найден"}), 404
+
+        payload = _get_request_data()
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Некорректный формат данных"}), 400
+
+        data = _normalize_project_data(payload)
+        _project_details[project_id] = data
+        _apply_detail_relations(project, data)
+        _sync_relations()
+        _persist_catalogs()
+        _persist_project_details()
+        return jsonify(
+            {
+                "message": "Данные проекта сохранены",
+                "data": data,
+                "project": _serialize_project(project),
+            }
+        )
 
     @app.get("/api/templates")
     def api_templates() -> object:
