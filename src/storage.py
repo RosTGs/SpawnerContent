@@ -56,6 +56,7 @@ class ProjectRecord:
 
     id: int
     name: str
+    owner: str = ""
     description: str = ""
     author: str = ""
     status: str = "active"
@@ -69,6 +70,7 @@ class ProjectRecord:
         return cls(
             id=int(payload.get("id", 0)),
             name=str(payload.get("name", "")),
+            owner=str(payload.get("owner", "")),
             description=str(payload.get("description", "")),
             author=str(payload.get("author", "")),
             status=str(payload.get("status", "active")),
@@ -151,6 +153,8 @@ class GenerationRecord:
     sheet_prompts: List[str]
     aspect_ratio: str
     resolution: str
+    owner: str = ""
+    created_at: str = ""
     latest_image: Optional[str] = None
     image_paths: List[Optional[str]] = field(default_factory=list)
     image_statuses: List[str] = field(default_factory=list)
@@ -166,6 +170,8 @@ class GenerationRecord:
     def from_dict(cls, payload: Dict[str, object]) -> "GenerationRecord":
         return cls(
             id=int(payload.get("id", 0)),
+            owner=str(payload.get("owner", "")),
+            created_at=str(payload.get("created_at", "")),
             sheet_prompts=list(payload.get("sheet_prompts", [])),
             aspect_ratio=str(payload.get("aspect_ratio", "1:1")),
             resolution=str(payload.get("resolution", "1K")),

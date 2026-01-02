@@ -101,6 +101,8 @@ class GenerationEntry:
     sheet_prompts: List[str]
     aspect_ratio: str
     resolution: str
+    owner: str = ""
+    created_at: str = ""
     latest_image: Optional[str] = None
     image_paths: List[Optional[str]] = field(default_factory=list)
     image_statuses: List[str] = field(default_factory=list)
@@ -231,6 +233,8 @@ def _fill_generation_lists(entry: GenerationEntry) -> None:
 def _generation_from_record(record: GenerationRecord) -> GenerationEntry:
     entry = GenerationEntry(
         id=record.id,
+        owner=getattr(record, "owner", ""),
+        created_at=getattr(record, "created_at", ""),
         sheet_prompts=record.sheet_prompts,
         aspect_ratio=record.aspect_ratio,
         resolution=record.resolution,
@@ -255,6 +259,8 @@ def _record_from_generation(entry: GenerationEntry) -> GenerationRecord:
     entry.recalc_flags()
     return GenerationRecord(
         id=entry.id,
+        owner=entry.owner,
+        created_at=entry.created_at,
         sheet_prompts=list(entry.sheet_prompts),
         aspect_ratio=entry.aspect_ratio,
         resolution=entry.resolution,
@@ -469,6 +475,7 @@ def _serialize_project(project: ProjectRecord) -> dict[str, object]:
     return {
         "id": project.id,
         "name": project.name,
+        "owner": project.owner,
         "description": project.description,
         "author": project.author,
         "status": project.status,
@@ -569,8 +576,17 @@ def _asset_url_for_path(path_value: str | None) -> str | None:
 _sync_relations()
 
 
-def _find_project(project_id: int) -> ProjectRecord | None:
-    return next((item for item in _projects if item.id == project_id), None)
+def _find_project(project_id: int, owner: str | None = None) -> ProjectRecord | None:
+    owner_lower = owner.lower() if owner else None
+    return next(
+        (
+            item
+            for item in _projects
+            if item.id == project_id
+            and (owner_lower is None or item.owner.lower() == owner_lower)
+        ),
+        None,
+    )
 
 
 def _find_template(template_id: int) -> TemplateRecord | None:
@@ -716,7 +732,51 @@ def create_app() -> Flask:
 
     @app.get("/api/status")
     def status() -> object:
-        return jsonify(_status_payload())
+        user = _authenticated_user()
+        if not user:
+            return jsonify(_status_payload(None))
+
+        return jsonify(_status_payload(user))
+
+    @app.get("/api/history")
+    def history() -> object:
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        username = str(user.get("username", ""))
+        items: list[dict[str, object]] = []
+
+        for entry in _generations:
+            if entry.owner.lower() != username.lower():
+                continue
+
+            for image in entry.images:
+                if not image.get("exists"):
+                    continue
+
+                items.append(
+                    {
+                        "generationId": entry.id,
+                        "sheetIndex": int(image.get("index", 0)),
+                        "status": str(image.get("status", "")),
+                        "approved": bool(image.get("approved", False)),
+                        "assetUrl": _asset_url_for_path(str(image.get("asset_name"))),
+                        "filename": str(image.get("filename", "")),
+                        "createdAt": entry.created_at,
+                    }
+                )
+
+        items.sort(
+            key=lambda item: (
+                str(item.get("createdAt", "")),
+                int(item.get("generationId", 0)),
+                int(item.get("sheetIndex", 0)),
+            ),
+            reverse=True,
+        )
+
+        return jsonify({"images": items})
 
     @app.post("/api/auth/register")
     def api_auth_register() -> object:
@@ -822,15 +882,27 @@ def create_app() -> Flask:
 
     @app.get("/api/projects")
     def api_projects() -> object:
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        username = str(user.get("username", ""))
         _sync_relations()
-        return jsonify({"projects": [_serialize_project(project) for project in _projects]})
+        user_projects = [
+            project for project in _projects if project.owner.lower() == username.lower()
+        ]
+        return jsonify({"projects": [_serialize_project(project) for project in user_projects]})
 
     @app.post("/api/projects")
     def api_create_project() -> object:
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
         payload = _get_request_data()
         name = (payload.get("name") or "").strip()
         description = (payload.get("description") or "").strip()
-        author = (payload.get("author") or "").strip()
+        author = (payload.get("author") or "").strip() or str(user.get("username", ""))
         template_ids = _parse_ids(payload.get("template_ids"))
         asset_ids = _parse_ids(payload.get("asset_ids"))
         if not name:
@@ -840,6 +912,7 @@ def create_app() -> Flask:
         project = ProjectRecord(
             id=_next_project_id,
             name=name,
+            owner=str(user.get("username", "")),
             description=description,
             author=author,
             status="active",
@@ -858,7 +931,12 @@ def create_app() -> Flask:
 
     @app.put("/api/projects/<int:project_id>")
     def api_update_project(project_id: int) -> object:
-        project = _find_project(project_id)
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        username = str(user.get("username", ""))
+        project = _find_project(project_id, owner=username)
         if not project:
             return jsonify({"error": "Проект не найден"}), 404
 
@@ -883,7 +961,12 @@ def create_app() -> Flask:
 
     @app.delete("/api/projects/<int:project_id>")
     def api_delete_project(project_id: int) -> object:
-        project = _find_project(project_id)
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        username = str(user.get("username", ""))
+        project = _find_project(project_id, owner=username)
         if not project:
             return jsonify({"error": "Проект не найден"}), 404
 
@@ -897,7 +980,12 @@ def create_app() -> Flask:
 
     @app.get("/api/projects/<int:project_id>/data")
     def api_project_details(project_id: int) -> object:
-        project = _find_project(project_id)
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        username = str(user.get("username", ""))
+        project = _find_project(project_id, owner=username)
         if not project:
             return jsonify({"error": "Проект не найден"}), 404
 
@@ -906,7 +994,12 @@ def create_app() -> Flask:
 
     @app.put("/api/projects/<int:project_id>/data")
     def api_save_project_details(project_id: int) -> object:
-        project = _find_project(project_id)
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        username = str(user.get("username", ""))
+        project = _find_project(project_id, owner=username)
         if not project:
             return jsonify({"error": "Проект не найден"}), 404
 
@@ -1092,10 +1185,18 @@ def create_app() -> Flask:
 
     @app.get("/api/settings")
     def api_settings() -> object:
-        return jsonify({"settings": _settings_payload(), "status": _status_payload()})
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        return jsonify({"settings": _settings_payload(), "status": _status_payload(user)})
 
     @app.post("/api/generate")
     def generate() -> object:
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
         payload = _get_request_data()
         api_key = _resolve_api_key(payload.get("api_key"))
         aspect_ratio = payload.get("aspect_ratio", ASPECT_RATIOS[0])
@@ -1147,15 +1248,20 @@ def create_app() -> Flask:
             resolution=resolution,
             background_references=merged_background_refs,
             detail_references=merged_detail_refs,
+            owner=str(user.get("username", "")),
         )
         _run_generation(entry, api_key)
         return jsonify({"message": "Генерация запущена", "generation_id": entry.id})
 
     @app.post("/api/generations/<int:generation_id>/images/<int:image_index>/regenerate")
     def regenerate_image(generation_id: int, image_index: int) -> object:
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
         payload = _get_request_data()
         api_key = _resolve_api_key(payload.get("api_key"))
-        entry = _find_generation(generation_id)
+        entry = _find_generation(generation_id, owner=str(user.get("username", "")))
         if not entry:
             return jsonify({"error": "Не удалось найти указанную генерацию."}), 404
         _ensure_image_lists(entry)
@@ -1253,7 +1359,11 @@ def create_app() -> Flask:
 
     @app.post("/api/generations/<int:generation_id>/images/<int:image_index>/approve")
     def approve_image(generation_id: int, image_index: int) -> object:
-        entry = _find_generation(generation_id)
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        entry = _find_generation(generation_id, owner=str(user.get("username", "")))
         if not entry:
             return jsonify({"error": "Не удалось найти указанную генерацию."}), 404
 
@@ -1268,7 +1378,11 @@ def create_app() -> Flask:
 
     @app.post("/api/generations/<int:generation_id>/export_pdf")
     def export_pdf_route(generation_id: int):
-        entry = _find_generation(generation_id)
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        entry = _find_generation(generation_id, owner=str(user.get("username", "")))
         if not entry:
             return jsonify({"error": "Не удалось найти указанную генерацию."}), 404
 
@@ -1288,7 +1402,11 @@ def create_app() -> Flask:
 
     @app.get("/api/generations/<int:generation_id>/images/archive")
     def download_generation_images(generation_id: int):
-        entry = _find_generation(generation_id)
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+
+        entry = _find_generation(generation_id, owner=str(user.get("username", "")))
         if not entry:
             return jsonify({"error": "Не удалось найти указанную генерацию."}), 404
 
@@ -1396,22 +1514,23 @@ def _get_request_data() -> dict[str, object]:
     return data
 
 
-def _status_payload() -> dict[str, object]:
+def _status_payload(user: dict[str, object] | None = None) -> dict[str, object]:
+    username = str(user.get("username", "")).lower() if user else ""
+
+    def _user_generations() -> list[GenerationEntry]:
+        if not username:
+            return []
+        return [gen for gen in _generations if gen.owner.lower() == username]
+
+    generations = _user_generations()
+
     progress = {
-        "total": len(_generations),
+        "total": len(generations),
         "completed": len(
-            [
-                gen
-                for gen in _generations
-                if gen.status in {"ready", "approved"}
-            ]
+            [gen for gen in generations if gen.status in {"ready", "approved"}]
         ),
         "active": len(
-            [
-                gen
-                for gen in _generations
-                if gen.status in {"generating", "regenerating"}
-            ]
+            [gen for gen in generations if gen.status in {"generating", "regenerating"}]
         ),
     }
 
@@ -1446,7 +1565,7 @@ def _status_payload() -> dict[str, object]:
 
     return {
         "progress": progress,
-        "generations": [serialize_generation(gen) for gen in _generations],
+        "generations": [serialize_generation(gen) for gen in generations],
     }
 
 
@@ -1458,9 +1577,12 @@ def _settings_payload() -> dict[str, object]:
     }
 
 
-def _find_generation(generation_id: int) -> Optional[GenerationEntry]:
+def _find_generation(generation_id: int, owner: str | None = None) -> Optional[GenerationEntry]:
+    owner_lower = owner.lower() if owner else None
     for entry in _generations:
-        if entry.id == generation_id:
+        if entry.id == generation_id and (
+            owner_lower is None or entry.owner.lower() == owner_lower
+        ):
             return entry
     return None
 
@@ -1491,10 +1613,13 @@ def _register_generation(
     resolution: str,
     background_references: Optional[List[str]] = None,
     detail_references: Optional[List[str]] = None,
+    owner: str = "",
 ) -> GenerationEntry:
     global _next_generation_id
     entry = GenerationEntry(
         id=_next_generation_id,
+        owner=owner,
+        created_at=_timestamp(),
         sheet_prompts=sheet_prompts,
         aspect_ratio=aspect_ratio,
         resolution=resolution,
