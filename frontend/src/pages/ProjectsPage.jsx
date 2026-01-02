@@ -732,7 +732,7 @@ function ProjectsPage() {
 
 
       {detailOpen && currentProject && selectedProjectData && (
-        <div className="modal-backdrop" role="presentation" onClick={closeProjectWindow}>
+        <div className="modal-backdrop" role="presentation">
           <div
             className="card modal project-window"
             role="dialog"
