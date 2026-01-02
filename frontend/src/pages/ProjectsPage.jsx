@@ -1,17 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { requestApi } from "../api/client.js";
 import { useProject } from "../ProjectContext.jsx";
-
-const apiBases = (() => {
-  const candidates = ["/api"];
-  const baseFromVite = import.meta.env.BASE_URL;
-
-  if (baseFromVite && baseFromVite !== "/" && baseFromVite !== "./") {
-    candidates.push(`${baseFromVite.replace(/\/$/, "")}/api`);
-  }
-
-  return Array.from(new Set(candidates));
-})();
 
 const mockProjects = [
   {
@@ -36,35 +26,6 @@ const mockProjects = [
     updatedAt: "2024-05-25T17:10:00Z",
   },
 ];
-
-async function requestApi(path, options = {}) {
-  let lastError = null;
-
-  for (const base of apiBases) {
-    const url = `${base}${path}`;
-
-    try {
-      const response = await fetch(url, options);
-      const isJson = response.headers.get("content-type")?.includes("application/json");
-
-      const payload = isJson ? await response.json() : await response.text();
-
-      if (!response.ok) {
-        const message =
-          typeof payload === "string"
-            ? payload || `HTTP ${response.status}`
-            : payload?.error || `HTTP ${response.status}`;
-        throw new Error(message);
-      }
-
-      return { response, payload };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError || new Error("Не удалось выполнить запрос к API");
-}
 
 function normalizeProject(project) {
   const normalizedTags = Array.isArray(project?.tags)

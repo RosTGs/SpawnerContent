@@ -9,6 +9,59 @@ export const apiBases = (() => {
   return Array.from(new Set(candidates));
 })();
 
+const STORAGE_KEYS = {
+  token: "auth:token",
+  user: "auth:user",
+};
+
+export function getStoredToken() {
+  if (typeof localStorage === "undefined") return "";
+  try {
+    return localStorage.getItem(STORAGE_KEYS.token) || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+export function persistAuthState(token, user) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEYS.token, token || "");
+    localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user || {}));
+  } catch (error) {
+    // ignore
+  }
+}
+
+export function clearAuthState() {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.removeItem(STORAGE_KEYS.token);
+    localStorage.removeItem(STORAGE_KEYS.user);
+  } catch (error) {
+    // ignore
+  }
+}
+
+export function getStoredUser() {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.user);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function withAuthHeaders(options) {
+  const token = getStoredToken();
+  const headers = new Headers(options.headers || {});
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return { ...options, headers };
+}
+
 export async function requestApi(path, options = {}) {
   let lastError = null;
 
@@ -16,7 +69,7 @@ export async function requestApi(path, options = {}) {
     const url = `${base}${path}`;
 
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, withAuthHeaders(options));
       const isJson = response.headers
         .get("content-type")
         ?.includes("application/json");
@@ -74,8 +127,8 @@ export async function downloadApi(path, options = {}) {
     try {
       const response = await fetch(url, {
         method: options.method || "GET",
-        headers: options.headers,
         body: options.body,
+        ...withAuthHeaders(options),
       });
 
       if (!response.ok) {

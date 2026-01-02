@@ -1,6 +1,7 @@
 """Flask web interface for Gemini image generation."""
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -25,7 +26,9 @@ from flask import (
     url_for,
 )
 import yaml
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.datastructures import FileStorage
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from .gemini_client import GeminiClient
 from .storage import (
@@ -84,6 +87,7 @@ STATUS_LABELS = {
     "error": "Ошибка",
 }
 TEMPLATE_KINDS = {"text", "background", "layout"}
+USERS_FILE = DATA_DIR / "users.json"
 
 
 @dataclass
@@ -278,10 +282,51 @@ _next_generation_id = 1 + max((entry.id for entry in _generations), default=0)
 _next_project_id = 1 + max((project.id for project in _projects), default=0)
 _next_template_id = 1 + max((template.id for template in _templates), default=0)
 _next_asset_id = 1 + max((asset.id for asset in _assets), default=0)
+_users: list[dict[str, object]] = []
+
+
+def _load_users() -> list[dict[str, object]]:
+    try:
+        if USERS_FILE.exists():
+            with USERS_FILE.open(encoding="utf-8") as fh:
+                data = json.load(fh)
+                if isinstance(data, list):
+                    return [
+                        entry
+                        for entry in data
+                        if isinstance(entry, dict) and "username" in entry
+                    ]
+    except (OSError, json.JSONDecodeError):
+        return []
+    return []
+
+
+def _save_users() -> None:
+    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with USERS_FILE.open("w", encoding="utf-8") as fh:
+        json.dump(_users, fh, ensure_ascii=False, indent=2)
+
+
+def _find_user_record(username: str) -> dict[str, object] | None:
+    username_lower = username.lower()
+    return next(
+        (entry for entry in _users if str(entry.get("username", "")).lower() == username_lower),
+        None,
+    )
+
+
+_users = _load_users()
 
 
 def _timestamp() -> str:
     return datetime.utcnow().isoformat()
+
+
+def _public_user(user: dict[str, object]) -> dict[str, object]:
+    return {
+        "username": str(user.get("username", "")),
+        "created_at": str(user.get("created_at", "")),
+    }
 
 
 def _sync_relations() -> None:
@@ -415,6 +460,35 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
     translations = get_translations()
     available_languages = sorted(translations.keys())
+    token_serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="auth-token")
+    token_ttl_seconds = 60 * 60 * 24 * 7
+
+    def _generate_token(username: str) -> str:
+        return token_serializer.dumps({"username": username, "ts": _timestamp()})
+
+    def _find_user_by_token(token: str) -> dict[str, object] | None:
+        try:
+            data = token_serializer.loads(token, max_age=token_ttl_seconds)
+        except (BadSignature, SignatureExpired):
+            return None
+
+        username = data.get("username")
+        if not username:
+            return None
+        return _find_user_record(str(username))
+
+    def _authenticated_user() -> dict[str, object] | None:
+        header = request.headers.get("Authorization", "")
+        token = None
+        if isinstance(header, str) and header.lower().startswith("bearer "):
+            token = header.split(" ", 1)[1].strip()
+        if not token:
+            token = request.cookies.get("auth_token") or None
+
+        return _find_user_by_token(token) if token else None
+
+    def _auth_response(user: dict[str, object]) -> dict[str, object]:
+        return {"token": _generate_token(str(user.get("username", ""))), "user": _public_user(user)}
 
     def _resolve_language() -> str:
         lang = request.args.get("lang") or request.cookies.get("lang")
@@ -493,6 +567,46 @@ def create_app() -> Flask:
     @app.get("/api/status")
     def status() -> object:
         return jsonify(_status_payload())
+
+    @app.post("/api/auth/register")
+    def api_auth_register() -> object:
+        payload = _get_request_data()
+        username = (payload.get("username") or "").strip()
+        password = (payload.get("password") or "").strip()
+
+        if not username or not password:
+            return jsonify({"error": "Укажите логин и пароль"}), 400
+
+        if _find_user_record(username):
+            return jsonify({"error": "Пользователь уже существует"}), 400
+
+        record = {
+            "username": username,
+            "password_hash": generate_password_hash(password),
+            "created_at": _timestamp(),
+        }
+        _users.append(record)
+        _save_users()
+        return jsonify(_auth_response(record)), 201
+
+    @app.post("/api/auth/login")
+    def api_auth_login() -> object:
+        payload = _get_request_data()
+        username = (payload.get("username") or "").strip()
+        password = (payload.get("password") or "").strip()
+
+        record = _find_user_record(username)
+        if not record or not check_password_hash(str(record.get("password_hash", "")), password):
+            return jsonify({"error": "Неверный логин или пароль"}), 401
+
+        return jsonify(_auth_response(record))
+
+    @app.get("/api/auth/me")
+    def api_auth_me() -> object:
+        user = _authenticated_user()
+        if not user:
+            return jsonify({"error": "Требуется авторизация"}), 401
+        return jsonify({"user": _public_user(user)})
 
     @app.post("/api/tests/run")
     def api_run_tests() -> object:
