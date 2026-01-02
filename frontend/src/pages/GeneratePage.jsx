@@ -19,14 +19,40 @@ function normalizeAssetUrl(url) {
   return `${baseWithoutSlash}${suffix}`;
 }
 
+function getFormStorageKey(projectId) {
+  return projectId ? `generationForm:${projectId}` : null;
+}
+
+function readStoredForm(projectId) {
+  if (typeof window === "undefined" || !projectId) return null;
+
+  try {
+    const raw = window.localStorage.getItem(getFormStorageKey(projectId));
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function GeneratePage() {
   const { settings } = useSettings();
   const { selectedProject, setSelectedProject } = useProject();
   const { id: routeProjectId } = useParams();
   const location = useLocation();
-  const [aspectRatio, setAspectRatio] = useState(settings.defaultAspectRatio || ASPECT_RATIOS[0]);
-  const [resolution, setResolution] = useState(settings.defaultResolution || RESOLUTIONS[0]);
-  const [prompts, setPrompts] = useState([""]);
+  const defaultAspectRatio = settings.defaultAspectRatio || ASPECT_RATIOS[0];
+  const defaultResolution = settings.defaultResolution || RESOLUTIONS[0];
+  const [aspectRatio, setAspectRatio] = useState(() => {
+    const stored = readStoredForm(routeProjectId);
+    return stored?.aspectRatio || defaultAspectRatio;
+  });
+  const [resolution, setResolution] = useState(() => {
+    const stored = readStoredForm(routeProjectId);
+    return stored?.resolution || defaultResolution;
+  });
+  const [prompts, setPrompts] = useState(() => {
+    const stored = readStoredForm(routeProjectId);
+    return stored?.prompts?.length ? stored.prompts : [""];
+  });
   const [status, setStatus] = useState(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -64,9 +90,37 @@ function GeneratePage() {
   }, [refreshStatus]);
 
   useEffect(() => {
-    setAspectRatio(settings.defaultAspectRatio || ASPECT_RATIOS[0]);
-    setResolution(settings.defaultResolution || RESOLUTIONS[0]);
-  }, [settings.defaultAspectRatio, settings.defaultResolution]);
+    if (!effectiveProject?.id) return;
+
+    const stored = readStoredForm(effectiveProject.id);
+
+    if (stored) {
+      setAspectRatio(stored.aspectRatio || defaultAspectRatio);
+      setResolution(stored.resolution || defaultResolution);
+      setPrompts(stored.prompts?.length ? stored.prompts : [""]);
+      return;
+    }
+
+    setAspectRatio(defaultAspectRatio);
+    setResolution(defaultResolution);
+    setPrompts((prev) => (prev.length ? prev : [""]));
+  }, [defaultAspectRatio, defaultResolution, effectiveProject?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !effectiveProject?.id) return;
+
+    const payload = {
+      aspectRatio,
+      resolution,
+      prompts,
+    };
+
+    try {
+      window.localStorage.setItem(getFormStorageKey(effectiveProject.id), JSON.stringify(payload));
+    } catch (error) {
+      /* noop */
+    }
+  }, [aspectRatio, effectiveProject?.id, prompts, resolution]);
 
   useEffect(() => {
     if (!status?.progress?.active) {
