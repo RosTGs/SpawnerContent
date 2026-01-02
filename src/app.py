@@ -458,6 +458,9 @@ def _find_asset(asset_id: int) -> AssetRecord | None:
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+    admin_email = os.getenv("ADMIN_EMAIL", "").strip()
+    admin_password_hash = os.getenv("ADMIN_PASSWORD_HASH", "").strip()
+    admin_access_token = os.getenv("ADMIN_ACCESS_TOKEN", "").strip()
     translations = get_translations()
     available_languages = sorted(translations.keys())
     token_serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="auth-token")
@@ -486,6 +489,27 @@ def create_app() -> Flask:
             token = request.cookies.get("auth_token") or None
 
         return _find_user_by_token(token) if token else None
+
+    def _admin_settings_present() -> bool:
+        return bool(admin_email and admin_password_hash)
+
+    def _ensure_admin_record() -> dict[str, object] | None:
+        if not _admin_settings_present():
+            return None
+
+        record = _find_user_record(admin_email)
+        if not record:
+            record = {
+                "username": admin_email,
+                "password_hash": admin_password_hash,
+                "created_at": _timestamp(),
+            }
+            _users.append(record)
+            _save_users()
+        elif record.get("password_hash") != admin_password_hash:
+            record["password_hash"] = admin_password_hash
+            _save_users()
+        return record
 
     def _auth_response(user: dict[str, object]) -> dict[str, object]:
         return {"token": _generate_token(str(user.get("username", ""))), "user": _public_user(user)}
@@ -596,10 +620,66 @@ def create_app() -> Flask:
         password = (payload.get("password") or "").strip()
 
         record = _find_user_record(username)
+        if (
+            not record
+            and _admin_settings_present()
+            and username.lower() == admin_email.lower()
+        ):
+            if check_password_hash(admin_password_hash, password):
+                record = _ensure_admin_record()
+
         if not record or not check_password_hash(str(record.get("password_hash", "")), password):
             return jsonify({"error": "Неверный логин или пароль"}), 401
 
         return jsonify(_auth_response(record))
+
+    @app.post("/api/auth/admin/login")
+    def api_auth_admin_login() -> object:
+        if not _admin_settings_present():
+            return jsonify({"error": "Не заданы ADMIN_EMAIL и ADMIN_PASSWORD_HASH"}), 400
+
+        payload = _get_request_data()
+        token = (payload.get("token") or "").strip()
+        password = (payload.get("password") or "").strip()
+
+        if admin_access_token and token:
+            if token != admin_access_token:
+                return jsonify({"error": "Неверный токен администратора"}), 403
+        elif not password:
+            return jsonify({"error": "Укажите пароль или токен администратора"}), 400
+
+        if password and not check_password_hash(admin_password_hash, password):
+            return jsonify({"error": "Неверный пароль администратора"}), 403
+
+        record = _ensure_admin_record()
+        if not record:
+            return jsonify({"error": "Не удалось создать администратора"}), 500
+
+        return jsonify(_auth_response(record))
+
+    @app.post("/api/auth/admin/ensure")
+    def api_auth_admin_ensure() -> object:
+        if not _admin_settings_present():
+            return jsonify({"error": "Не заданы ADMIN_EMAIL и ADMIN_PASSWORD_HASH"}), 400
+
+        payload = _get_request_data()
+        token = (payload.get("token") or "").strip()
+        password = (payload.get("password") or "").strip()
+
+        if admin_access_token:
+            if token != admin_access_token:
+                return jsonify({"error": "Неверный токен администратора"}), 403
+        elif password:
+            if not check_password_hash(admin_password_hash, password):
+                return jsonify({"error": "Неверный пароль администратора"}), 403
+        else:
+            return jsonify({"error": "Укажите пароль или токен администратора"}), 400
+
+        record = _ensure_admin_record()
+        if not record:
+            return jsonify({"error": "Не удалось сохранить администратора"}), 500
+
+        return jsonify({"message": "Администратор сохранён", "user": _public_user(record)})
 
     @app.get("/api/auth/me")
     def api_auth_me() -> object:
