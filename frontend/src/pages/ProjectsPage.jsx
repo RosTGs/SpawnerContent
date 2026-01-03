@@ -193,6 +193,25 @@ function ProjectsPage() {
     return () => clearInterval(interval);
   }, [currentProject?.id, syncSupported]);
 
+  const loadHistory = useCallback(async () => {
+    setHistoryStatus({ state: "loading", message: "" });
+    try {
+      const { payload } = await requestApi("/history");
+      const items = payload?.images || [];
+      setHistory(items);
+      setHistoryStatus({
+        state: "success",
+        message: items.length ? `Всего изображений: ${items.length}` : "Изображений пока нет",
+      });
+    } catch (apiError) {
+      setHistory([]);
+      setHistoryStatus({
+        state: "error",
+        message: apiError.message || "Не удалось загрузить историю",
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!detailOpen || activeTab !== "history") return;
     loadHistory();
@@ -212,25 +231,6 @@ function ProjectsPage() {
       setLoading(false);
     }
   };
-
-  const loadHistory = useCallback(async () => {
-    setHistoryStatus({ state: "loading", message: "" });
-    try {
-      const { payload } = await requestApi("/history");
-      const items = payload?.images || [];
-      setHistory(items);
-      setHistoryStatus({
-        state: "success",
-        message: items.length ? `Всего изображений: ${items.length}` : "Изображений пока нет",
-      });
-    } catch (apiError) {
-      setHistory([]);
-      setHistoryStatus({
-        state: "error",
-        message: apiError.message || "Не удалось загрузить историю",
-      });
-    }
-  }, []);
 
   const persistProjectDetails = async (projectId, data) => {
     if (!projectId) return;
@@ -277,7 +277,19 @@ function ProjectsPage() {
     try {
       const { payload } = await requestApi(`/projects/${projectId}/data`);
       const normalized = normalizeProjectData(payload?.data);
-      setProjectDetails((prev) => ({ ...prev, [projectId]: normalized }));
+
+      setProjectDetails((prev) => {
+        const current = normalizeProjectData(prev[projectId] || createDefaultProjectData());
+        const currentUpdated = new Date(current.updatedAt).getTime();
+        const incomingUpdated = new Date(normalized.updatedAt).getTime();
+
+        if (Number.isFinite(currentUpdated) && Number.isFinite(incomingUpdated) && incomingUpdated < currentUpdated) {
+          return prev;
+        }
+
+        return { ...prev, [projectId]: normalized };
+      });
+
       if (!silent) {
         setDetailStatus({ state: "synced", message: "Данные синхронизированы с сервером" });
       }
