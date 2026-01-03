@@ -686,7 +686,7 @@ def create_app() -> Flask:
         """Serve the SPA bundle or fall back to the legacy template."""
 
         index_file = STATIC_DIR / "index.html"
-        if index_file.exists():
+        if SPA_ENABLED and index_file.exists():
             return send_from_directory(STATIC_DIR, "index.html")
 
         lang = _resolve_language()
