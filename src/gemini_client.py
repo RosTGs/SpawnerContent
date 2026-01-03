@@ -90,10 +90,12 @@ class GeminiClient:
                 if image and saved_image_path is None:
                     self._save_image(image, output_path)
                     saved_image_path = output_path
-        if saved_image_path is None:
-            raise RuntimeError("No image was returned from the model.")
+        if saved_image_path is None and extracted_images:
+            saved_image_path = extracted_images[0]
+        primary_image = saved_image_path or ""
+
         return GenerationResult(
-            image_path=saved_image_path,
+            image_path=primary_image,
             text_parts=text_parts,
             extra_images=extracted_images,
         )
