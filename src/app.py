@@ -682,10 +682,8 @@ def create_app() -> Flask:
             "frontend_translations_json": dump_translations_json(lang),
         }
 
-    SPA_ENABLED = os.getenv("USE_SPA_FRONTEND", "").lower() in {"1", "true", "yes"}
-
     def _render_projects_page() -> object:
-        """Serve the legacy template by default or the SPA when explicitly enabled."""
+        """Serve the SPA bundle or fall back to the legacy template."""
 
         index_file = STATIC_DIR / "index.html"
         if SPA_ENABLED and index_file.exists():
