@@ -682,11 +682,13 @@ def create_app() -> Flask:
             "frontend_translations_json": dump_translations_json(lang),
         }
 
-    @app.route("/")
-    def index() -> object:
+    def _render_projects_page() -> object:
+        """Serve the SPA bundle or fall back to the legacy template."""
+
         index_file = STATIC_DIR / "index.html"
         if index_file.exists():
             return send_from_directory(STATIC_DIR, "index.html")
+
         lang = _resolve_language()
         return render_template(
             "projects.html",
@@ -694,14 +696,15 @@ def create_app() -> Flask:
             title=translate("projects.title", lang),
         )
 
+    @app.route("/")
+    def index() -> object:
+        return _render_projects_page()
+
     @app.route("/projects")
-    def projects_page() -> object:
-        lang = _resolve_language()
-        return render_template(
-            "projects.html",
-            page="projects",
-            title=translate("projects.title", lang),
-        )
+    @app.route("/project")
+    @app.route("/project/<path:subpath>")
+    def projects_page(subpath: Optional[str] = None) -> object:
+        return _render_projects_page()
 
     @app.route("/templates")
     def templates_page() -> object:
