@@ -277,7 +277,19 @@ function ProjectsPage() {
     try {
       const { payload } = await requestApi(`/projects/${projectId}/data`);
       const normalized = normalizeProjectData(payload?.data);
-      setProjectDetails((prev) => ({ ...prev, [projectId]: normalized }));
+
+      setProjectDetails((prev) => {
+        const current = normalizeProjectData(prev[projectId] || createDefaultProjectData());
+        const currentUpdated = new Date(current.updatedAt).getTime();
+        const incomingUpdated = new Date(normalized.updatedAt).getTime();
+
+        if (Number.isFinite(currentUpdated) && Number.isFinite(incomingUpdated) && incomingUpdated < currentUpdated) {
+          return prev;
+        }
+
+        return { ...prev, [projectId]: normalized };
+      });
+
       if (!silent) {
         setDetailStatus({ state: "synced", message: "Данные синхронизированы с сервером" });
       }
