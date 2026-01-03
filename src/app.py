@@ -113,6 +113,7 @@ class GenerationEntry:
     text_parts: List[str] = field(default_factory=list)
     status: str = "pending"
     approved: bool = False
+    error_message: str = ""
 
     @property
     def prompt(self) -> str:
@@ -248,6 +249,7 @@ def _generation_from_record(record: GenerationRecord) -> GenerationEntry:
         text_parts=record.text_parts,
         status=record.status,
         approved=record.approved,
+        error_message=getattr(record, "error_message", ""),
     )
     _fill_generation_lists(entry)
     entry.recalc_flags()
@@ -274,6 +276,7 @@ def _record_from_generation(entry: GenerationEntry) -> GenerationRecord:
         text_parts=list(entry.text_parts),
         status=entry.status,
         approved=entry.approved,
+        error_message=entry.error_message,
     )
 
 
@@ -1254,7 +1257,13 @@ def create_app() -> Flask:
             owner=str(user.get("username", "")),
         )
         _run_generation(entry, api_key)
-        return jsonify({"message": "Генерация запущена", "generation_id": entry.id})
+        return jsonify(
+            {
+                "message": "Генерация запущена",
+                "generation_id": entry.id,
+                "generation": _serialize_generation(entry),
+            }
+        )
 
     @app.post("/api/generations/<int:generation_id>/images/<int:image_index>/regenerate")
     def regenerate_image(generation_id: int, image_index: int) -> object:
@@ -1276,7 +1285,12 @@ def create_app() -> Flask:
         entry.image_approvals[image_index] = False
         entry.image_statuses[image_index] = "regenerating"
         _run_generation(entry, api_key, target_index=image_index)
-        return jsonify({"message": "Регенерация запущена"})
+        return jsonify(
+            {
+                "message": "Регенерация запущена",
+                "generation": _serialize_generation(entry),
+            }
+        )
 
     @app.post("/api/settings")
     def update_settings() -> object:
@@ -1517,6 +1531,35 @@ def _get_request_data() -> dict[str, object]:
     return data
 
 
+def _serialize_generation(entry: GenerationEntry) -> dict[str, object]:
+    images: list[dict[str, object]] = []
+    for image in entry.images:
+        images.append(
+            {
+                "index": image["index"],
+                "status": image["status"],
+                "approved": image["approved"],
+                "exists": image["exists"],
+                "asset_url": url_for("serve_asset", filename=image["asset_name"])
+                if image["exists"]
+                else None,
+                "filename": image["filename"],
+            }
+        )
+
+    ready_count = len([img for img in images if img["status"] in {"ready", "approved"}])
+    return {
+        "id": entry.id,
+        "status": entry.status,
+        "status_label": STATUS_LABELS.get(entry.status, entry.status),
+        "approved": entry.approved,
+        "ready": ready_count,
+        "total": len(entry.sheet_prompts),
+        "images": images,
+        "error_message": entry.error_message,
+    }
+
+
 def _status_payload(user: dict[str, object] | None = None) -> dict[str, object]:
     username = str(user.get("username", "")).lower() if user else ""
 
@@ -1537,38 +1580,9 @@ def _status_payload(user: dict[str, object] | None = None) -> dict[str, object]:
         ),
     }
 
-    def serialize_generation(entry: GenerationEntry) -> dict[str, object]:
-        images: list[dict[str, object]] = []
-        for image in entry.images:
-            images.append(
-                {
-                    "index": image["index"],
-                    "status": image["status"],
-                    "approved": image["approved"],
-                    "exists": image["exists"],
-                    "asset_url": url_for("serve_asset", filename=image["asset_name"])
-                    if image["exists"]
-                    else None,
-                    "filename": image["filename"],
-                }
-            )
-
-        ready_count = len(
-            [img for img in images if img["status"] in {"ready", "approved"}]
-        )
-        return {
-            "id": entry.id,
-            "status": entry.status,
-            "status_label": STATUS_LABELS.get(entry.status, entry.status),
-            "approved": entry.approved,
-            "ready": ready_count,
-            "total": len(entry.sheet_prompts),
-            "images": images,
-        }
-
     return {
         "progress": progress,
-        "generations": [serialize_generation(gen) for gen in generations],
+        "generations": [_serialize_generation(gen) for gen in generations],
     }
 
 
@@ -1629,6 +1643,7 @@ def _register_generation(
         background_references=background_references or [],
         detail_references=detail_references or [],
         status="generating",
+        error_message="",
         image_paths=[None] * len(sheet_prompts),
         image_statuses=["generating"] * len(sheet_prompts),
         image_approvals=[False] * len(sheet_prompts),
@@ -1644,6 +1659,7 @@ def _run_generation(
     entry: GenerationEntry, api_key: Optional[str], *, target_index: Optional[int] = None
 ) -> None:
     try:
+        entry.error_message = ""
         client = GeminiClient(api_key=api_key)
         generated_images: List[str] = []
         collected_text_parts: List[str] = []
@@ -1716,17 +1732,21 @@ def _run_generation(
             )
         )
     except ValueError as exc:
+        app.logger.exception("Generation failed due to invalid input", exc_info=exc)
         if target_index is None:
             entry.image_statuses = ["error"] * len(entry.sheet_prompts)
         else:
             entry.image_statuses[target_index] = "error"
+        entry.error_message = str(exc)
         entry.recalc_flags()
         _persist_generations()
     except Exception as exc:  # noqa: BLE001
+        app.logger.exception("Unexpected error during generation", exc_info=exc)
         if target_index is None:
             entry.image_statuses = ["error"] * len(entry.sheet_prompts)
         else:
             entry.image_statuses[target_index] = "error"
+        entry.error_message = str(exc)
         entry.recalc_flags()
         _persist_generations()
     finally:

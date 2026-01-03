@@ -165,6 +165,7 @@ class GenerationRecord:
     text_parts: List[str] = field(default_factory=list)
     status: str = "pending"
     approved: bool = False
+    error_message: str = ""
 
     @classmethod
     def from_dict(cls, payload: Dict[str, object]) -> "GenerationRecord":
@@ -185,6 +186,7 @@ class GenerationRecord:
             text_parts=list(payload.get("text_parts", [])),
             status=str(payload.get("status", "pending")),
             approved=bool(payload.get("approved", False)),
+            error_message=str(payload.get("error_message", "")),
         )
 
 
