@@ -397,6 +397,9 @@ function GeneratePage() {
                         {generation.ready}/{generation.total}
                       </span>
                     </header>
+                    {generation.error_message ? (
+                      <p className="status error">Ошибка: {generation.error_message}</p>
+                    ) : null}
                     <div className="generation-actions">
                       <button
                         type="button"
