@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 import subprocess
@@ -602,6 +601,8 @@ def _find_asset(asset_id: int) -> AssetRecord | None:
 
 
 def create_app() -> Flask:
+    import logging
+
     app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
     app.logger.setLevel(logging.INFO)
@@ -612,8 +613,10 @@ def create_app() -> Flask:
 
     gunicorn_logger = logging.getLogger("gunicorn.error")
     if gunicorn_logger.handlers:
-        app.logger.handlers = gunicorn_logger.handlers
+        app.logger.handlers.extend(gunicorn_logger.handlers)
         app.logger.setLevel(gunicorn_logger.level or logging.INFO)
+        for handler in gunicorn_logger.handlers:
+            handler.setLevel(app.logger.level)
     admin_email = os.getenv("ADMIN_EMAIL", "").strip()
     admin_password_hash = os.getenv("ADMIN_PASSWORD_HASH", "").strip()
     admin_access_token = os.getenv("ADMIN_ACCESS_TOKEN", "").strip()
