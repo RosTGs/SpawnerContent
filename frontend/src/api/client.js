@@ -1,9 +1,34 @@
+function normalizeApiBase(value) {
+  const text = value?.toString().trim();
+  if (!text) return "";
+
+  // Убираем лишние слэши в конце, чтобы не дублировать при конкатенации с путями.
+  return text.replace(/\/+$/, "");
+}
+
+function normalizeApiPath(path) {
+  if (!path) return "/";
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
 export const apiBases = (() => {
-  const candidates = ["/api"];
+  const candidates = [];
+  const rawConfigBase =
+    import.meta.env?.VITE_API_BASE ||
+    (typeof window !== "undefined" ? window.__API_BASE__ : "");
   const baseFromVite = import.meta.env.BASE_URL;
 
-  if (baseFromVite && baseFromVite !== "/" && baseFromVite !== "./") {
-    candidates.push(`${baseFromVite.replace(/\/$/, "")}/api`);
+  const normalizedConfigBase = normalizeApiBase(rawConfigBase);
+
+  if (normalizedConfigBase) {
+    candidates.push(normalizedConfigBase);
+  }
+
+  candidates.push("/api");
+
+  const normalizedViteBase = normalizeApiBase(baseFromVite);
+  if (normalizedViteBase && normalizedViteBase !== "." && normalizedViteBase !== "./") {
+    candidates.push(`${normalizedViteBase}/api`);
   }
 
   return Array.from(new Set(candidates));
@@ -64,9 +89,10 @@ function withAuthHeaders(options) {
 
 export async function requestApi(path, options = {}) {
   let lastError = null;
+  const normalizedPath = normalizeApiPath(path);
 
   for (const base of apiBases) {
-    const url = `${base}${path}`;
+    const url = `${base}${normalizedPath}`;
 
     try {
       const response = await fetch(url, withAuthHeaders(options));
@@ -120,9 +146,10 @@ function extractFilename(response, fallback) {
 
 export async function downloadApi(path, options = {}) {
   let lastError = null;
+  const normalizedPath = normalizeApiPath(path);
 
   for (const base of apiBases) {
-    const url = `${base}${path}`;
+    const url = `${base}${normalizedPath}`;
 
     try {
       const response = await fetch(url, {
