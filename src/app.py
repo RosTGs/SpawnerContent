@@ -301,6 +301,7 @@ def _default_project_data() -> dict[str, object]:
     }
 
 
+ensure_output_dir(DEFAULT_OUTPUT_DIR)
 ensure_data_dir(DATA_DIR)
 _settings: Settings = load_settings()
 _channel_lookup: dict[str, object] | None = None
