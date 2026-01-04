@@ -1205,6 +1205,11 @@ def create_app() -> Flask:
             return jsonify({"error": "Требуется авторизация"}), 401
 
         payload = _get_request_data()
+        app.logger.info(
+            "Получен POST /api/generate от %s (ключи: %s)",
+            str(user.get("username", "")),
+            ", ".join(sorted(payload.keys())),
+        )
         api_key = _resolve_api_key(payload.get("api_key"))
         aspect_ratio = payload.get("aspect_ratio", ASPECT_RATIOS[0])
         resolution = payload.get("resolution", RESOLUTIONS[0])
@@ -1221,7 +1226,27 @@ def create_app() -> Flask:
         sheet_prompts.extend(yaml_prompts)
 
         if not sheet_prompts:
+            app.logger.warning(
+                "Запрос генерации отклонён: промты не переданы (пользователь %s)",
+                str(user.get("username", "")),
+            )
             return jsonify({"error": "Добавьте хотя бы один промт листа для генерации."}), 400
+
+        if aspect_ratio not in ASPECT_RATIOS:
+            app.logger.warning(
+                "Запрос генерации отклонён: неизвестное соотношение %s (пользователь %s)",
+                aspect_ratio,
+                str(user.get("username", "")),
+            )
+            return jsonify({"error": "Укажите корректное соотношение сторон."}), 400
+
+        if resolution not in RESOLUTIONS:
+            app.logger.warning(
+                "Запрос генерации отклонён: неизвестное разрешение %s (пользователь %s)",
+                resolution,
+                str(user.get("username", "")),
+            )
+            return jsonify({"error": "Укажите корректное разрешение."}), 400
 
         background_refs = _save_reference_uploads(
             request.files.getlist("background_references"),
@@ -1241,13 +1266,35 @@ def create_app() -> Flask:
             _settings.detail_references, detail_refs
         )
 
+        if background_refs or detail_refs:
+            app.logger.info(
+                "Загружены новые референсы: фон %s, детали %s (генерация %s)",
+                len(background_refs),
+                len(detail_refs),
+                _next_generation_id,
+            )
+
         _settings.background_references = merged_background_refs
         _settings.detail_references = merged_detail_refs
         if background_refs or detail_refs:
             save_settings(_settings, SETTINGS_FILE)
 
         if not api_key:
+            app.logger.warning(
+                "Запрос генерации отклонён: отсутствует API ключ для пользователя %s",
+                str(user.get("username", "")),
+            )
             return jsonify({"error": "Укажите Gemini API ключ в настройках или в запросе перед запуском генерации."}), 400
+
+        app.logger.info(
+            "Запрос генерации от %s: %s промтов, аспект %s, разрешение %s, референсы bg=%s detail=%s",
+            str(user.get("username", "")),
+            len(sheet_prompts),
+            aspect_ratio,
+            resolution,
+            len(merged_background_refs),
+            len(merged_detail_refs),
+        )
 
         entry = _register_generation(
             sheet_prompts=sheet_prompts,
@@ -1282,9 +1329,21 @@ def create_app() -> Flask:
             return jsonify({"error": "Некорректный номер изображения для регенерации."}), 400
 
         if not api_key:
+            app.logger.warning(
+                "Регенерация #%s листа %s отклонена: отсутствует API ключ (пользователь %s)",
+                entry.id,
+                image_index,
+                str(user.get("username", "")),
+            )
             return jsonify({"error": "Добавьте Gemini API ключ, чтобы перегенерировать изображение."}), 400
         entry.image_approvals[image_index] = False
         entry.image_statuses[image_index] = "regenerating"
+        app.logger.info(
+            "Запущена регенерация изображения %s для генерации #%s пользователем %s",
+            image_index,
+            entry.id,
+            str(user.get("username", "")),
+        )
         _run_generation(entry, api_key, target_index=image_index)
         return jsonify(
             {
@@ -1653,6 +1712,13 @@ def _register_generation(
     _next_generation_id += 1
     _generations.insert(0, entry)
     _persist_generations()
+    app.logger.info(
+        "Сгенерирована запись #%s для %s промтов (аспект %s, разрешение %s)",
+        entry.id,
+        len(sheet_prompts),
+        aspect_ratio,
+        resolution,
+    )
     return entry
 
 
@@ -1661,6 +1727,12 @@ def _run_generation(
 ) -> None:
     try:
         entry.error_message = ""
+        app.logger.info(
+            "Старт генерации #%s для пользователя %s (цель: %s)",
+            entry.id,
+            entry.owner or "unknown",
+            "все изображения" if target_index is None else f"лист {target_index + 1}",
+        )
         client = GeminiClient(api_key=api_key)
         generated_images: List[str] = []
         collected_text_parts: List[str] = []
@@ -1686,6 +1758,13 @@ def _run_generation(
                 "regenerating" if target_index is not None else "generating"
             )
             _persist_generations()
+            app.logger.info(
+                "Генерация #%s: старт листа %s/%s -> %s",
+                entry.id,
+                displayed_index,
+                len(entry.sheet_prompts),
+                target_path,
+            )
             result = client.generate_image(
                 prompt=full_prompt,
                 aspect_ratio=entry.aspect_ratio,
@@ -1700,6 +1779,14 @@ def _run_generation(
             entry.pdf_image_candidates[prompt_index] = result.extra_images
 
             _persist_generations()
+
+            app.logger.info(
+                "Генерация #%s: лист %s готов, основной файл %s, доп. вариантов %s",
+                entry.id,
+                displayed_index,
+                result.image_path,
+                len(result.extra_images),
+            )
 
             generated_images.append(result.image_path)
             collected_text_parts.extend(result.text_parts)
@@ -1732,8 +1819,13 @@ def _run_generation(
                 alternate_images=entry.pdf_image_candidates,
             )
         )
+        app.logger.info(
+            "Генерация #%s завершена со статусом %s", entry.id, entry.status
+        )
     except ValueError as exc:
-        app.logger.exception("Generation failed due to invalid input", exc_info=exc)
+        app.logger.exception(
+            "Generation %s failed due to invalid input", entry.id, exc_info=exc
+        )
         if target_index is None:
             entry.image_statuses = ["error"] * len(entry.sheet_prompts)
         else:
@@ -1742,7 +1834,9 @@ def _run_generation(
         entry.recalc_flags()
         _persist_generations()
     except Exception as exc:  # noqa: BLE001
-        app.logger.exception("Unexpected error during generation", exc_info=exc)
+        app.logger.exception(
+            "Unexpected error during generation %s", entry.id, exc_info=exc
+        )
         if target_index is None:
             entry.image_statuses = ["error"] * len(entry.sheet_prompts)
         else:
