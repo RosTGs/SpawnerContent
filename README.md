@@ -91,6 +91,24 @@ git status --short static
 
 Скопируйте `.env.example` в `.env` и заполните значения под своё окружение.
 
+### Базовый URL API для фронтенда
+
+Если SPA отдаётся не из корня домена или API проксируется под префиксом, задайте базовый URL для запросов фронтенда — это избавит от 404 при проксировании через nginx или вынесении API на отдельный домен.
+
+- **При сборке**: перед `npm run build` укажите переменную `VITE_API_BASE` с полным путём до API (без завершающего слэша), например:
+  ```bash
+  export VITE_API_BASE="https://example.com/custom/api"
+  npm run build
+  ```
+- **Без пересборки**: добавьте в отдаваемый `static/index.html` (или шаблон, который его генерирует) скрипт с глобальной переменной:
+  ```html
+  <script>window.__API_BASE__ = "https://example.com/custom/api";</script>
+  ```
+
+В обоих случаях фронтенд будет обращаться к указанному origin/префиксу раньше, чем к fallback `/api` или `BASE_URL/api`.
+
+> Пример для Timeweb Cloud: если SPA отдаётся по адресу `https://example.timeweb.cloud/spawner/`, задайте `VITE_API_BASE="https://example.timeweb.cloud/spawner/api"` (или пропишите `window.__API_BASE__`), чтобы запросы не уходили в корень домена.
+
 ### Настройка администратора
 
 1. Сгенерируйте хеш пароля (`ADMIN_PASSWORD_HASH`) и задайте логин (`ADMIN_EMAIL`) в `.env`. При необходимости добавьте удобный токен (`ADMIN_ACCESS_TOKEN`) для автоматических инициализаций без передачи пароля.
