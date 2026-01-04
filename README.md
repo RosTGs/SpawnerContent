@@ -305,7 +305,8 @@ pip install -r requirements.txt
 
 ```bash
 cd frontend
-npm install
+export VITE_API_BASE="https://example.timeweb.cloud/spawner/api"
+npm install       # или npm ci
 npm run build
 cd ..
 git status --short static
