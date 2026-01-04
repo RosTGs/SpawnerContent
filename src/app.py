@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
 import time
-from datetime import datetime
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -604,6 +604,16 @@ def _find_asset(asset_id: int) -> AssetRecord | None:
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+    app.logger.setLevel(logging.INFO)
+
+    root_logger = logging.getLogger()
+    if root_logger.level > logging.INFO:
+        root_logger.setLevel(logging.INFO)
+
+    gunicorn_logger = logging.getLogger("gunicorn.error")
+    if gunicorn_logger.handlers:
+        app.logger.handlers = gunicorn_logger.handlers
+        app.logger.setLevel(gunicorn_logger.level or logging.INFO)
     admin_email = os.getenv("ADMIN_EMAIL", "").strip()
     admin_password_hash = os.getenv("ADMIN_PASSWORD_HASH", "").strip()
     admin_access_token = os.getenv("ADMIN_ACCESS_TOKEN", "").strip()
