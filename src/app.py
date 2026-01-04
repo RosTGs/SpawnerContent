@@ -1205,6 +1205,11 @@ def create_app() -> Flask:
             return jsonify({"error": "Требуется авторизация"}), 401
 
         payload = _get_request_data()
+        app.logger.info(
+            "Получен POST /api/generate от %s (ключи: %s)",
+            str(user.get("username", "")),
+            ", ".join(sorted(payload.keys())),
+        )
         api_key = _resolve_api_key(payload.get("api_key"))
         aspect_ratio = payload.get("aspect_ratio", ASPECT_RATIOS[0])
         resolution = payload.get("resolution", RESOLUTIONS[0])
@@ -1221,7 +1226,27 @@ def create_app() -> Flask:
         sheet_prompts.extend(yaml_prompts)
 
         if not sheet_prompts:
+            app.logger.warning(
+                "Запрос генерации отклонён: промты не переданы (пользователь %s)",
+                str(user.get("username", "")),
+            )
             return jsonify({"error": "Добавьте хотя бы один промт листа для генерации."}), 400
+
+        if aspect_ratio not in ASPECT_RATIOS:
+            app.logger.warning(
+                "Запрос генерации отклонён: неизвестное соотношение %s (пользователь %s)",
+                aspect_ratio,
+                str(user.get("username", "")),
+            )
+            return jsonify({"error": "Укажите корректное соотношение сторон."}), 400
+
+        if resolution not in RESOLUTIONS:
+            app.logger.warning(
+                "Запрос генерации отклонён: неизвестное разрешение %s (пользователь %s)",
+                resolution,
+                str(user.get("username", "")),
+            )
+            return jsonify({"error": "Укажите корректное разрешение."}), 400
 
         background_refs = _save_reference_uploads(
             request.files.getlist("background_references"),
@@ -1240,6 +1265,14 @@ def create_app() -> Flask:
         merged_detail_refs = _merge_references(
             _settings.detail_references, detail_refs
         )
+
+        if background_refs or detail_refs:
+            app.logger.info(
+                "Загружены новые референсы: фон %s, детали %s (генерация %s)",
+                len(background_refs),
+                len(detail_refs),
+                _next_generation_id,
+            )
 
         _settings.background_references = merged_background_refs
         _settings.detail_references = merged_detail_refs

@@ -99,12 +99,15 @@ function GeneratePage() {
 
   const refreshStatus = useCallback(async () => {
     setRefreshing(true);
+    console.info("[generate] Запрос статуса генераций отправлен...");
 
     try {
       const { payload } = await requestApi("/status");
       setStatus(payload);
       setMessage("");
+      console.info("[generate] Статус получен", payload?.progress);
     } catch (error) {
+      console.error("[generate] Не удалось обновить статус", error);
       setMessage(`Не удалось получить статус: ${error.message || error}`);
     } finally {
       setRefreshing(false);
@@ -184,6 +187,13 @@ function GeneratePage() {
       return;
     }
 
+    console.info("[generate] Отправка запроса на генерацию", {
+      aspectRatio,
+      resolution,
+      promptCount: promptList.length,
+      projectId: effectiveProject.id,
+    });
+
     try {
       const { payload } = await requestApi("/generate", {
         method: "POST",
@@ -200,8 +210,10 @@ function GeneratePage() {
       });
 
       setMessage((payload && payload.message) || "Генерация запущена");
+      console.info("[generate] Запрос принят", payload);
       refreshStatus();
     } catch (error) {
+      console.error("[generate] Ошибка при запуске", error);
       setMessage(error.message || "Неизвестная ошибка");
     } finally {
       setLoading(false);
