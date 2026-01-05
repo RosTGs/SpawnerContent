@@ -297,7 +297,6 @@ def _default_project_data() -> dict[str, object]:
         "status": "idle",
         "statusNote": "",
         "pdfVersion": None,
-        "updatedAt": _timestamp(),
     }
 
 
@@ -448,7 +447,6 @@ def _normalize_project_data(payload: dict[str, object]) -> dict[str, object]:
     status = str(payload.get("status", base["status"]))
     status_note = str(payload.get("statusNote", base["statusNote"]))
     pdf_version = payload.get("pdfVersion") if payload.get("pdfVersion") else None
-    updated_at = str(payload.get("updatedAt") or _timestamp())
 
     return {
         "templates": templates,
@@ -459,7 +457,6 @@ def _normalize_project_data(payload: dict[str, object]) -> dict[str, object]:
         "status": status,
         "statusNote": status_note,
         "pdfVersion": pdf_version,
-        "updatedAt": updated_at,
     }
 
 
@@ -1029,6 +1026,8 @@ def create_app() -> Flask:
             return jsonify({"error": "Некорректный формат данных"}), 400
 
         data = _normalize_project_data(payload)
+        data["updatedAt"] = _timestamp()
+
         _project_details[project_id] = data
         _apply_detail_relations(project, data)
         _sync_relations()
