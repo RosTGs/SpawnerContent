@@ -13,7 +13,7 @@ from werkzeug.utils import secure_filename
 
 from PIL import Image
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR_ENV_VAR = "SPAWNER_DATA_DIR"
 
 
