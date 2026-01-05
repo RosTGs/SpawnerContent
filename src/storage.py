@@ -14,7 +14,17 @@ from werkzeug.utils import secure_filename
 from PIL import Image
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_OUTPUT_DIR = BASE_DIR / "output"
+DATA_DIR_ENV_VAR = "SPAWNER_DATA_DIR"
+
+
+def _resolve_output_dir() -> Path:
+    env_dir = os.getenv(DATA_DIR_ENV_VAR)
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+    return BASE_DIR / "output"
+
+
+DEFAULT_OUTPUT_DIR = _resolve_output_dir()
 DEFAULT_DESKTOP_PDF = Path.home() / "Desktop" / "gemini_output.pdf"
 SETTINGS_FILE = DEFAULT_OUTPUT_DIR / "settings.json"
 
