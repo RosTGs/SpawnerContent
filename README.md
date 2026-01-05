@@ -76,9 +76,9 @@ PORT="5000,5001,8000" python -m src.app
 
 4. **Запустите backend через gunicorn.**
    ```bash
-   gunicorn "src.app:create_app()" --bind 0.0.0.0:8000 --workers 2
+   gunicorn "src.app:create_app()" --bind 0.0.0.0:5200 --workers 2
    ```
-   Откройте `http://<ip_сервера>:8000` для проверки. Если порт занят, поменяйте `--bind`.
+   Откройте `http://<ip_сервера>:5200` для проверки. Если порт занят, поменяйте `--bind`.
 
 5. **Оформите systemd unit (пример).**
    ```ini
@@ -89,7 +89,7 @@ PORT="5000,5001,8000" python -m src.app
    [Service]
    WorkingDirectory=/srv/websites/spawner
    EnvironmentFile=/srv/websites/spawner/.env
-   ExecStart=/srv/websites/spawner/.venv/bin/gunicorn -w 2 -b 0.0.0.0:8000 'src.app:create_app()'
+   ExecStart=/srv/websites/spawner/.venv/bin/gunicorn -w 2 -b 0.0.0.0:5200 'src.app:create_app()'
    Restart=always
 
    [Install]
@@ -110,13 +110,13 @@ PORT="5000,5001,8000" python -m src.app
        }
 
        location /assets/ {
-           proxy_pass http://127.0.0.1:8000;
+           proxy_pass http://127.0.0.1:5200;
        }
 
        location /api/ {
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
-           proxy_pass http://127.0.0.1:8000;
+           proxy_pass http://127.0.0.1:5200;
        }
 
        location / {
@@ -126,7 +126,7 @@ PORT="5000,5001,8000" python -m src.app
        location @flask {
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
-           proxy_pass http://127.0.0.1:8000;
+           proxy_pass http://127.0.0.1:5200;
        }
    }
    ```
