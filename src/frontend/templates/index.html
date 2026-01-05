@@ -35,6 +35,49 @@
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
         gap: 16px;
       }
+      .generation-accordion {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .generation-accordion details {
+        border: 1px solid #e2e8f0;
+        padding: 0;
+        overflow: hidden;
+      }
+      .generation-accordion summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 20px;
+        cursor: pointer;
+        list-style: none;
+      }
+      .generation-accordion summary::-webkit-details-marker {
+        display: none;
+      }
+      .generation-accordion summary .summary-title {
+        font-weight: 700;
+        font-size: 16px;
+        margin: 0 0 6px;
+      }
+      .generation-accordion summary .summary-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        color: #475569;
+        font-size: 13px;
+      }
+      .generation-accordion summary .summary-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .generation-content {
+        padding: 0 20px 20px;
+        border-top: 1px solid #e2e8f0;
+      }
       .history {
         display: grid;
         grid-template-columns: 280px 1fr;
@@ -518,127 +561,138 @@
           <div id="gen-nav" class="gen-list">
             {% for gen in generations %}
               <button type="button" data-gen-id="{{ gen.id }}">
-                <span>#{{ gen.id }}</span>
-                <span style="font-size: 12px; color: #475569; display: inline-flex; gap: 6px; align-items: center;">
-                  <span>{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
-                  {% if gen.approved %}<span>★</span>{% endif %}
-                </span>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <span style="font-weight: 700;">#{{ gen.id }} — {{ gen.title }}</span>
+                  <span style="font-size: 12px; color: #475569; display: inline-flex; gap: 6px; align-items: center;">{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
+                </div>
+                {% if gen.approved %}<span>★</span>{% endif %}
               </button>
             {% endfor %}
           </div>
           <button id="show-all" class="button secondary full-width" type="button">Показать все</button>
         </div>
-        <div class="grid">
+        <div class="generation-accordion">
         {% for gen in generations %}
-          <div class="card generation-card" data-gen-card="{{ gen.id }}" id="generation-{{ gen.id }}">
-            <div class="header-actions">
+          <details class="card generation-card" data-gen-card="{{ gen.id }}" id="generation-{{ gen.id }}" {% if loop.first %}open{% endif %}>
+            <summary>
               <div>
-                <div style="font-weight: 700; font-size: 16px;">Генерация #{{ gen.id }}</div>
-                <div class="chip-row">
+                <div class="summary-title">Проект #{{ gen.id }} — {{ gen.title }}</div>
+                <div class="summary-meta">
+                  <span>{{ gen.sheet_prompts | length }} листа(ов)</span>
+                  <span>Формат {{ gen.aspect_ratio }}</span>
+                  <span>Разрешение {{ gen.resolution }}</span>
+                </div>
+              </div>
+              <div class="summary-actions">
+                {% if gen.approved %}<span class="chip">★ понравилось</span>{% endif %}
+                <span class="badge {{ gen.status }}" data-status-badge>{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
+              </div>
+            </summary>
+            <div class="generation-content">
+              {% if gen.status in ['generating', 'regenerating'] %}
+                <div class="status-note" style="margin-top: 8px;">
+                  🔄 Генерация продолжается — дождитесь завершения, чтобы не запускать лишние запросы.
+                </div>
+              {% endif %}
+
+              {% set ready_count = gen.images | selectattr('status', 'in', ['ready', 'approved']) | list | length %}
+              <div class="status-note" data-gen-progress="{{ gen.id }}" style="margin-top: 8px;">
+                📥 Загружено <strong data-ready-count>{{ ready_count }}</strong> / {{ gen.images|length }} изображений.
+              </div>
+
+              <div class="header-actions" style="margin-top: 10px;">
+                <div class="chip-row" style="margin: 0;">
                   <span class="chip">{{ gen.aspect_ratio }}</span>
                   <span class="chip">{{ gen.resolution }}</span>
                   {% if gen.approved %}<span class="chip">★ понравилось</span>{% endif %}
                 </div>
-              </div>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <form method="post" action="{{ url_for('export_pdf_route', generation_id=gen.id) }}">
-                  <button class="button secondary" type="submit" {% if not gen.approved %}disabled{% endif %}>Сделать PDF</button>
-                </form>
-                <span class="badge {{ gen.status }}" data-status-badge>{{ STATUS_LABELS.get(gen.status, gen.status) }}</span>
-              </div>
-            </div>
-
-            {% if gen.status in ['generating', 'regenerating'] %}
-              <div class="status-note" style="margin-top: 8px;">
-                🔄 Генерация продолжается — дождитесь завершения, чтобы не запускать лишние запросы.
-              </div>
-            {% endif %}
-
-            {% set ready_count = gen.images | selectattr('status', 'in', ['ready', 'approved']) | list | length %}
-            <div class="status-note" data-gen-progress="{{ gen.id }}" style="margin-top: 8px;">
-              📥 Загружено <strong data-ready-count>{{ ready_count }}</strong> / {{ gen.images|length }} изображений.
-            </div>
-
-            <div class="grid" style="margin-top: 8px;">
-              <div>
-                {% for prompt in gen.sheet_prompts %}
-                    <div class="sheet-prompt">
-                      <h4>Промт листа {{ loop.index }}</h4>
-                      <p>{{ prompt }}</p>
-                    </div>
-                  {% endfor %}
-                {% if gen.background_references %}
-                  <div style="margin-top: 12px;">
-                    <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы фона</h4>
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                      {% for ref in gen.background_references %}
-                        {% set filename = ref.rsplit('/', 1)[-1] %}
-                        <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
-                          📎 {{ filename }}
-                        </a>
-                      {% endfor %}
-                    </div>
-                  </div>
-                {% endif %}
-                {% if gen.detail_references %}
-                  <div style="margin-top: 12px;">
-                    <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы контента</h4>
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                      {% for ref in gen.detail_references %}
-                        {% set filename = ref.rsplit('/', 1)[-1] %}
-                        <a href="{{ url_for('serve_asset', filename=filename) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
-                          📎 {{ filename }}
-                        </a>
-                      {% endfor %}
-                    </div>
-                  </div>
-                {% endif %}
-                {% if gen.text_parts %}
-                  <div style="margin-top: 10px;">
-                    <h4 style="margin: 0 0 6px; font-size: 13px;">Текстовые подсказки модели</h4>
-                    <ul style="margin: 0 0 4px 18px; color: #475569;">
-                      {% for text in gen.text_parts %}
-                        <li>{{ text }}</li>
-                      {% endfor %}
-                    </ul>
-                  </div>
-                {% endif %}
-            </div>
-            <div class="preview">
-              {% set images = gen.images %}
-              {% if images %}
-                <div class="preview-grid">
-                  {% for image in images %}
-                    <div class="image-card" data-image-card="{{ image.index }}" data-gen-id="{{ gen.id }}" data-image-status="{{ image.status }}" data-image-approved="{{ 'true' if image.approved else 'false' }}">
-                      <div class="image-visual" data-image-visual data-image-index="{{ image.index }}">
-                        {% if image.exists %}
-                          <img data-preview-img src="{{ url_for('serve_asset', filename=image.asset_name) }}" alt="Результат листа {{ loop.index }}">
-                        {% else %}
-                          <div class="placeholder">Файл {{ image.filename }} не найден. Проверьте путь и перезапустите генерацию.</div>
-                        {% endif %}
-                      </div>
-                      <div class="chip-row">
-                        <span class="chip" data-image-status>{{ STATUS_LABELS.get(image.status, image.status) }}</span>
-                        {% if image.approved %}<span class="chip" data-image-approved>★ понравилось</span>{% endif %}
-                      </div>
-                      <div class="actions">
-                        <form method="post" action="{{ url_for('approve_image', generation_id=gen.id, image_index=image.index) }}">
-                          <button class="button" type="submit" data-action-approve {% if image.approved or image.status != 'ready' or progress.active %}disabled{% endif %}>👍 Апрув</button>
-                        </form>
-                        <form method="post" action="{{ url_for('regenerate_image', generation_id=gen.id, image_index=image.index) }}" style="display: flex; gap: 8px; align-items: center;">
-                          <input name="api_key" type="password" placeholder="API key (опционально)" value="{{ settings.api_key }}" style="width: 180px;">
-                          <button class="button secondary" type="submit" data-action-regenerate {% if image.status in ['generating', 'regenerating', 'pending'] or progress.active %}disabled{% endif %}>↻ Регенерировать</button>
-                        </form>
-                      </div>
-                    </div>
-                  {% endfor %}
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                  <a class="button secondary" href="{{ url_for('download_document_images', generation_id=gen.id) }}" style="text-decoration: none;">⬇️ Скачать изображения</a>
+                  <form method="post" action="{{ url_for('export_pdf_route', generation_id=gen.id) }}">
+                    <button class="button secondary" type="submit" {% if not gen.approved %}disabled{% endif %}>Сделать PDF</button>
+                  </form>
                 </div>
-              {% else %}
-                <div class="placeholder">Изображение появится после генерации.</div>
-              {% endif %}
+              </div>
+
+              <div class="grid" style="margin-top: 8px;">
+                <div>
+                  {% for prompt in gen.sheet_prompts %}
+                      <div class="sheet-prompt">
+                        <h4>Промт листа {{ loop.index }}</h4>
+                        <p>{{ prompt }}</p>
+                      </div>
+                    {% endfor %}
+                  {% if gen.background_reference_links %}
+                    <div style="margin-top: 12px;">
+                      <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы фона</h4>
+                      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        {% for ref in gen.background_reference_links %}
+                          <a href="{{ url_for('serve_asset', filename=ref.asset_name) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
+                            📎 {{ ref.label }}
+                          </a>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  {% endif %}
+                  {% if gen.detail_reference_links %}
+                    <div style="margin-top: 12px;">
+                      <h4 style="margin: 0 0 6px; font-size: 13px;">Референсы контента</h4>
+                      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        {% for ref in gen.detail_reference_links %}
+                          <a href="{{ url_for('serve_asset', filename=ref.asset_name) }}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #e2e8f0; color: #0f172a; text-decoration: none; font-size: 12px;">
+                            📎 {{ ref.label }}
+                          </a>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  {% endif %}
+                  {% if gen.text_parts %}
+                    <div style="margin-top: 10px;">
+                      <h4 style="margin: 0 0 6px; font-size: 13px;">Текстовые подсказки модели</h4>
+                      <ul style="margin: 0 0 4px 18px; color: #475569;">
+                        {% for text in gen.text_parts %}
+                          <li>{{ text }}</li>
+                        {% endfor %}
+                      </ul>
+                    </div>
+                  {% endif %}
+                </div>
+                <div class="preview">
+                  {% set images = gen.images %}
+                  {% if images %}
+                    <div class="preview-grid">
+                      {% for image in images %}
+                        <div class="image-card" data-image-card="{{ image.index }}" data-gen-id="{{ gen.id }}" data-image-status="{{ image.status }}" data-image-approved="{{ 'true' if image.approved else 'false' }}">
+                          <div class="image-visual" data-image-visual data-image-index="{{ image.index }}">
+                            {% if image.exists %}
+                              <img data-preview-img src="{{ url_for('serve_asset', filename=image.asset_name) }}" alt="Результат листа {{ loop.index }}">
+                            {% else %}
+                              <div class="placeholder">Файл {{ image.filename }} не найден. Проверьте путь и перезапустите генерацию.</div>
+                            {% endif %}
+                          </div>
+                          <div class="chip-row">
+                            <span class="chip" data-image-status>{{ STATUS_LABELS.get(image.status, image.status) }}</span>
+                            {% if image.approved %}<span class="chip" data-image-approved>★ понравилось</span>{% endif %}
+                          </div>
+                          <div class="actions">
+                            <form method="post" action="{{ url_for('approve_image', generation_id=gen.id, image_index=image.index) }}">
+                              <button class="button" type="submit" data-action-approve {% if image.approved or image.status != 'ready' or progress.active %}disabled{% endif %}>👍 Апрув</button>
+                            </form>
+                            <form method="post" action="{{ url_for('regenerate_image', generation_id=gen.id, image_index=image.index) }}" style="display: flex; gap: 8px; align-items: center;">
+                              <input name="api_key" type="password" placeholder="API key (опционально)" value="{{ settings.api_key }}" style="width: 180px;">
+                              <button class="button secondary" type="submit" data-action-regenerate {% if image.status in ['generating', 'regenerating', 'pending'] or progress.active %}disabled{% endif %}>↻ Регенерировать</button>
+                            </form>
+                          </div>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="placeholder">Изображение появится после генерации.</div>
+                  {% endif %}
+                </div>
+              </div>
             </div>
-          </div>
-          </div>
+          </details>
         {% endfor %}
       </div>
       </div>
@@ -685,7 +739,7 @@
         const idStr = id ? String(id) : null;
         generationCards.forEach((card) => {
           const isActive = !idStr || card.dataset.genCard === idStr;
-          card.classList.toggle('hidden-card', !isActive);
+          card.open = isActive;
           if (isActive && idStr) {
             card.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }

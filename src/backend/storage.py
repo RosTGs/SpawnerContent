@@ -59,17 +59,29 @@ def ensure_output_dir(root: Path = DEFAULT_OUTPUT_DIR) -> Path:
     return root
 
 
-def new_asset_path(sheet_name: str, root: Path = DEFAULT_OUTPUT_DIR) -> Path:
+def get_generation_dir(generation_id: int, root: Path = DEFAULT_OUTPUT_DIR) -> Path:
+    return ensure_output_dir(root / f"generation-{generation_id}")
+
+
+def new_asset_path(
+    sheet_name: str, *, generation_id: Optional[int] = None, root: Path = DEFAULT_OUTPUT_DIR
+) -> Path:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     sanitized = sheet_name.replace(" ", "_")
-    return ensure_output_dir(root) / f"{sanitized}-{timestamp}.png"
+    base_dir = get_generation_dir(generation_id, root) if generation_id else ensure_output_dir(root)
+    return base_dir / f"{sanitized}-{timestamp}.png"
 
 
-def save_metadata(sheet: SheetRecord, root: Path = DEFAULT_OUTPUT_DIR) -> Path:
-    ensure_output_dir(root)
+def save_metadata(
+    sheet: SheetRecord,
+    *,
+    generation_id: Optional[int] = None,
+    root: Path = DEFAULT_OUTPUT_DIR,
+) -> Path:
+    base_dir = get_generation_dir(generation_id, root) if generation_id else ensure_output_dir(root)
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     sanitized = sheet.name.replace(" ", "_")
-    path = root / f"{sanitized}-{timestamp}.json"
+    path = base_dir / f"{sanitized}-{timestamp}.json"
     path.write_text(sheet.to_json(), encoding="utf-8")
     return path
 
@@ -97,15 +109,19 @@ def save_settings(settings: Settings, path: Path = SETTINGS_FILE) -> Path:
 
 
 def save_uploaded_file(
-    upload: FileStorage, *, prefix: str, root: Path = DEFAULT_OUTPUT_DIR
+    upload: FileStorage,
+    *,
+    prefix: str,
+    generation_id: Optional[int] = None,
+    root: Path = DEFAULT_OUTPUT_DIR,
 ) -> Path:
     """Save a user uploaded file inside the output directory."""
 
-    ensure_output_dir(root)
+    base_dir = get_generation_dir(generation_id, root) if generation_id else ensure_output_dir(root)
     sanitized_prefix = prefix.replace(" ", "_")
     filename = secure_filename(upload.filename or "uploaded")
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    path = root / f"{sanitized_prefix}-{timestamp}-{filename}"
+    path = base_dir / f"{sanitized_prefix}-{timestamp}-{filename}"
     upload.save(path)
     return path
 
