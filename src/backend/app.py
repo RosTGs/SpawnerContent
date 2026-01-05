@@ -1,8 +1,10 @@
 """Flask web interface for Gemini image generation."""
 from __future__ import annotations
 
+import json
 import os
-from dataclasses import dataclass, field
+import zipfile
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
@@ -26,6 +28,7 @@ from .storage import (
     SheetRecord,
     ensure_output_dir,
     export_pdf,
+    get_generation_dir,
     new_asset_path,
     save_metadata,
     load_settings,
@@ -83,6 +86,12 @@ class GenerationEntry:
     approved: bool = False
 
     @property
+    def title(self) -> str:
+        first_line = self.sheet_prompts[0].splitlines()[0] if self.sheet_prompts else ""
+        cleaned = first_line.strip()
+        return cleaned if cleaned else f"Генерация #{self.id}"
+
+    @property
     def prompt(self) -> str:
         numbered = [f"Промт листа {idx + 1}: {text}" for idx, text in enumerate(self.sheet_prompts)]
         return "\n\n".join(numbered)
@@ -90,6 +99,14 @@ class GenerationEntry:
     @property
     def all_references(self) -> List[str]:
         return [*self.background_references, *self.detail_references]
+
+    @property
+    def background_reference_links(self) -> List[dict[str, str]]:
+        return self._reference_links(self.background_references)
+
+    @property
+    def detail_reference_links(self) -> List[dict[str, str]]:
+        return self._reference_links(self.detail_references)
 
     @property
     def image_path(self) -> Optional[Path]:
@@ -157,6 +174,12 @@ class GenerationEntry:
                 selected.append(preferred)
         return selected
 
+    def _reference_links(self, references: List[str]) -> List[dict[str, str]]:
+        links: List[dict[str, str]] = []
+        for ref in references:
+            links.append({"asset_name": _to_asset_name(ref), "label": Path(ref).name})
+        return links
+
     def recalc_flags(self) -> None:
         self.approved = bool(self.image_approvals) and all(self.image_approvals)
         if any(state == "regenerating" for state in self.image_statuses):
@@ -187,6 +210,70 @@ class GenerationEntry:
 _generations: List[GenerationEntry] = []
 _next_generation_id = 1
 _settings: Settings = load_settings()
+
+
+def _to_asset_name(path_str: str) -> str:
+    path = Path(path_str)
+    if path.is_absolute():
+        try:
+            return path.relative_to(DEFAULT_OUTPUT_DIR).as_posix()
+        except ValueError:
+            return path.name
+    return path.as_posix()
+
+
+def _generation_state_path(generation_id: int) -> Path:
+    return get_generation_dir(generation_id) / "state.json"
+
+
+def _persist_generation(entry: GenerationEntry) -> None:
+    state_path = _generation_state_path(entry.id)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    serializable = asdict(entry)
+    serializable["image_paths"] = [str(path) if path else None for path in entry.image_paths]
+    serializable["background_references"] = [str(ref) for ref in entry.background_references]
+    serializable["detail_references"] = [str(ref) for ref in entry.detail_references]
+    state_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_saved_generations() -> None:
+    global _generations, _next_generation_id
+
+    ensure_output_dir(DEFAULT_OUTPUT_DIR)
+    saved: List[GenerationEntry] = []
+    for state_file in DEFAULT_OUTPUT_DIR.glob("generation-*/state.json"):
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        entry = GenerationEntry(
+            id=int(data.get("id", 0)),
+            sheet_prompts=data.get("sheet_prompts", []),
+            aspect_ratio=data.get("aspect_ratio", ASPECT_RATIOS[0]),
+            resolution=data.get("resolution", RESOLUTIONS[0]),
+            latest_image=data.get("latest_image"),
+            image_paths=data.get("image_paths", []),
+            image_statuses=data.get("image_statuses", []),
+            image_approvals=data.get("image_approvals", []),
+            pdf_image_candidates=data.get("pdf_image_candidates", []),
+            background_references=data.get("background_references", []),
+            detail_references=data.get("detail_references", []),
+            text_parts=data.get("text_parts", []),
+            status=data.get("status", "pending"),
+            approved=data.get("approved", False),
+        )
+        _ensure_image_lists(entry)
+        entry.recalc_flags()
+        saved.append(entry)
+
+    saved.sort(key=lambda item: item.id, reverse=True)
+    _generations = saved
+    _next_generation_id = max([gen.id for gen in saved], default=0) + 1
+
+
+_load_saved_generations()
+
 
 
 def create_app() -> Flask:
@@ -358,6 +445,7 @@ def create_app() -> Flask:
             return redirect(url_for("index"))
         entry.image_approvals[image_index] = False
         entry.image_statuses[image_index] = "regenerating"
+        _persist_generation(entry)
         _run_generation(entry, api_key, target_index=image_index)
         return redirect(url_for("index"))
 
@@ -410,6 +498,7 @@ def create_app() -> Flask:
             else:
                 entry.image_approvals[image_index] = True
                 entry.recalc_flags()
+                _persist_generation(entry)
                 flash("Изображение отмечено как понравившееся.", "success")
         return redirect(url_for("index"))
 
@@ -434,6 +523,31 @@ def create_app() -> Flask:
         pdf_path = export_pdf(valid_paths, destination)
         return send_from_directory(
             pdf_path.parent, pdf_path.name, as_attachment=True, download_name=pdf_path.name
+        )
+
+    @app.get("/download/<int:generation_id>/document-images")
+    def download_document_images(generation_id: int):
+        entry = _find_generation(generation_id)
+        if not entry:
+            flash("Не удалось найти указанную генерацию.", "error")
+            return redirect(url_for("index"))
+
+        images = [Path(path) for path in entry.preferred_pdf_images if path]
+        images = [path for path in images if path.exists()]
+        if not images:
+            flash("Нет готовых изображений для выгрузки.", "error")
+            return redirect(url_for("index"))
+
+        archive_path = get_generation_dir(generation_id) / "document-images.zip"
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for image in images:
+                archive.write(image, arcname=image.name)
+
+        return send_from_directory(
+            archive_path.parent,
+            archive_path.name,
+            as_attachment=True,
+            download_name=archive_path.name,
         )
 
     @app.route("/assets/<path:filename>")
@@ -487,6 +601,8 @@ def _register_generation(
     )
     _next_generation_id += 1
     _generations.insert(0, entry)
+    get_generation_dir(entry.id)
+    _persist_generation(entry)
     return entry
 
 
@@ -511,7 +627,12 @@ def _run_generation(
         for displayed_index in target_indices:
             prompt_index = displayed_index - 1
             sheet_prompt = entry.sheet_prompts[prompt_index]
-            target_path = str(new_asset_path(f"generation-{entry.id}-sheet-{displayed_index}"))
+            target_path = str(
+                new_asset_path(
+                    f"generation-{entry.id}-sheet-{displayed_index}",
+                    generation_id=entry.id,
+                )
+            )
             full_prompt = _build_generation_prompt(
                 f"Промт листа {displayed_index}: {sheet_prompt}"
             )
@@ -560,7 +681,8 @@ def _run_generation(
                 images=generated_images,
                 text_parts=collected_text_parts,
                 alternate_images=entry.pdf_image_candidates,
-            )
+            ),
+            generation_id=entry.id,
         )
         flash("Изображение готово и добавлено в список.", "success")
     except Exception as exc:  # noqa: BLE001
@@ -570,6 +692,8 @@ def _run_generation(
             entry.image_statuses[target_index] = "error"
         entry.recalc_flags()
         flash(f"Ошибка при генерации: {exc}", "error")
+    finally:
+        _persist_generation(entry)
 
 
 app = create_app()
@@ -646,7 +770,9 @@ def _save_reference_uploads(files, *, generation_id: int, prefix: str) -> List[s
     for upload in files:
         if not upload or not upload.filename:
             continue
-        saved_path = save_uploaded_file(upload, prefix=f"gen-{generation_id}-{prefix}")
+        saved_path = save_uploaded_file(
+            upload, prefix=f"gen-{generation_id}-{prefix}", generation_id=generation_id
+        )
         saved.append(str(saved_path))
     return saved
 
@@ -673,7 +799,7 @@ def _delete_reference_file(path_str: str) -> None:
     try:
         path = Path(path_str)
         if not path.is_absolute():
-            path = DEFAULT_OUTPUT_DIR / path.name
+            path = DEFAULT_OUTPUT_DIR / path
         if path.is_file():
             path.unlink()
     except OSError:
