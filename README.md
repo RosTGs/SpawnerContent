@@ -25,6 +25,10 @@ pip install -r requirements.txt
 ```
 
 ## Запуск
+Проект разделён на два слоя:
+- **backend** — Flask-приложение, весь серверный код находится в `src/backend`.
+- **frontend** — шаблоны и статические файлы в `src/frontend`.
+
 ```bash
 python -m src.app
 ```
@@ -41,6 +45,92 @@ PORT="5000,5001,8000" python -m src.app
 Приложение выберет первый свободный порт из списка и выведет его в консоль при запуске.
 
 На macOS порт 5000 может занимать AirPlay Receiver. Отключите его в **System Settings → General → AirDrop & Handoff → AirPlay Receiver** или добавьте свободный порт в список `PORT`.
+
+### Запуск на удалённом сервере (шаг за шагом)
+Ниже — сценарий для Ubuntu/Debian без Docker, повторяющий реальную конфигурацию с Nginx.
+
+1. **Подготовьте окружение.**
+   ```bash
+   sudo apt update && sudo apt install -y python3-venv python3-pip
+   git clone https://github.com/<org>/SpawnerContent.git /srv/websites/spawner
+   cd /srv/websites/spawner
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Вынесите данные из репозитория.**
+   ```bash
+   mkdir -p /srv/websites/spawner-data
+   echo "SPAWNER_DATA_DIR=/srv/websites/spawner-data" >> .env
+   export GEMINI_API_KEY="ваш_ключ"
+   # По желанию: export FLASK_SECRET_KEY="случайная_строка"
+   ```
+   При необходимости перенесите старые JSON-файлы из `output/` в новый каталог.
+
+3. **Соберите и положите статику (если используете SPA).**
+   Если фронтенд собран сборщиком (Vite/React), его артефакты должны лежать в `src/frontend/static/`. Для SPA под прокси можно задать базовый URL для API двумя способами:
+   - Перед `npm run build` установить переменную `VITE_API_BASE` с полным путём до API без завершающего слэша, например `export VITE_API_BASE="https://example.com/custom/api"`.
+   - Без пересборки добавить в отдаваемый `static/index.html` скрипт `window.__API_BASE__ = "https://example.com/custom/api";`.
+   В обоих случаях фронтенд будет стучаться к указанному URL вместо fallback `/api`.
+
+4. **Запустите backend через gunicorn.**
+   ```bash
+   gunicorn "src.app:create_app()" --bind 0.0.0.0:8000 --workers 2
+   ```
+   Откройте `http://<ip_сервера>:8000` для проверки. Если порт занят, поменяйте `--bind`.
+
+5. **Оформите systemd unit (пример).**
+   ```ini
+   [Unit]
+   Description=Gemini Sheet API
+   After=network.target
+
+   [Service]
+   WorkingDirectory=/srv/websites/spawner
+   EnvironmentFile=/srv/websites/spawner/.env
+   ExecStart=/srv/websites/spawner/.venv/bin/gunicorn -w 2 -b 0.0.0.0:8000 'src.app:create_app()'
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   Примените: `systemctl daemon-reload && systemctl enable --now spawner.service`.
+
+6. **Настройте Nginx как обратный прокси.**
+   Пример минимальной схемы с alias на статические файлы и проксированием API:
+   ```nginx
+   server {
+       listen 80;
+       server_name _;
+
+       location ^~ /static/ {
+           alias /srv/websites/spawner/src/frontend/static/;
+           try_files $uri $uri/ =404;
+       }
+
+       location /assets/ {
+           proxy_pass http://127.0.0.1:8000;
+       }
+
+       location /api/ {
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_pass http://127.0.0.1:8000;
+       }
+
+       location / {
+           try_files $uri $uri/ @flask;
+       }
+
+       location @flask {
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_pass http://127.0.0.1:8000;
+       }
+   }
+   ```
+   Если включён HTTPS, блок `location ^~ /static/` должен находиться выше SPA-фоллбека `location /`, иначе браузер получит `index.html` вместо JS.
 
 ## Использование
 1. Добавьте один или несколько блоков промта и заполните их текстом.
