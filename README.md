@@ -81,5 +81,68 @@ PORT="5000,5001,8000" python -m src.app
 5. Перезапустите приложение (`python -m src.app`) и убедитесь, что генерация работает.
 3. После обновления перезапустите приложение (`python -m src.app`).
 
+## Развёртывание на Timeweb Cloud
+Ниже — краткий чек-лист для установки или обновления приложения на сервере Timeweb Cloud.
+
+1. **Клонируйте нужную ветку** (на проде используется `prog`):
+   ```bash
+   git clone git@github.com:RosTGs/SpawnerContent.git /srv/websites/spawner
+   cd /srv/websites/spawner
+   git checkout prog
+   ```
+   Если код уже развёрнут на `main`, переключитесь на `prog` без переустановки путей:
+   ```bash
+   cd /srv/websites/spawner
+   git fetch origin
+   git checkout prog
+   git reset --hard origin/prog
+   ```
+   Если `git checkout prog` ругается на несохранённые файлы (например, `frontend/package-lock.json` или `static/index.html`),
+   предварительно сохраните или спрячьте правки:
+   ```bash
+   git status -sb
+   git add <нужные_файлы> && git commit -m "backup before switch"  # либо временно: git stash
+   git checkout prog
+   git reset --hard origin/prog
+   ```
+2. **Подготовьте окружение** (Ubuntu 22.04+, Python 3.11, Node.js 18 через nvm):
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -U pip
+   pip install -r requirements.txt
+   ```
+   Фронтенд уже собран и лежит в `static/`, но при первых развёртываниях можно пересобрать:
+   ```bash
+   cd frontend
+   npm ci
+   npm run build
+   cd ..
+   git status --short static
+   ```
+3. **Укажите внешний каталог данных** (том вне релиза):
+   ```bash
+   echo "SPAWNER_DATA_DIR=/srv/websites/spawner-data" >> .env
+   python deploy/migrate_output_data.py --dest "$SPAWNER_DATA_DIR"
+   ```
+4. **Запустите бэкенд через gunicorn** (пример systemd unit):
+   ```ini
+   [Unit]
+   Description=Gemini Sheet API
+   After=network.target
+
+   [Service]
+   WorkingDirectory=/srv/websites/spawner
+   EnvironmentFile=/srv/websites/spawner/.env
+   ExecStart=/srv/websites/spawner/.venv/bin/gunicorn -w 2 -b 0.0.0.0:8000 'src.app:create_app()'
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   После добавления unit-файла выполните `systemctl daemon-reload && systemctl enable --now spawner.service`.
+5. **Настройте Nginx с раздачей статики** (примеры выше; важно, чтобы блок `location ^~ /static/` стоял выше SPA fallback). На боевом домене `app3.rostislavmusienko.ru` используется HTTPS-конфиг с alias на `/srv/websites/spawner/static/` и проксированием API на `127.0.0.1:8000`.
+6. **После обновления** при необходимости выполняйте `git pull origin prog`, `pip install -r requirements.txt`, пересборку фронтенда и `systemctl restart spawner.service`.
+
 ## Единый визуальный стиль
 В генерацию автоматически добавляется скрытый системный промт, который заставляет все карточки выглядеть как части одной коллекции: общий тёплый фон, единый гротескный шрифт и аккуратные рамки. Главный персонаж остаётся узнаваемым, но меняет позы, эмоции и ракурсы, поэтому кадры не повторяются.
