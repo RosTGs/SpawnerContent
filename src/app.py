@@ -35,12 +35,20 @@ from .storage import (
 
 ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
 RESOLUTIONS = ["1K", "2K", "4K"]
-SECRET_STYLE_PROMPT = (
-    "Фон в каждой карточке одинаковый"
-    "Все подписи и цифры делай одним шрифтом"
-    "Главный персонаж всегда узнаётся: сохраняй фирменные цвета, причёску и ключевые аксессуары, но меняй позы, эмоции и ракурс, "
-    "допускай разные техники рисования в пределах общего стиля референсов "
-    "Располагай героя так, чтобы он естественно вписывался в сетку листа и не повторялся один-в-один между кадрами."
+SECRET_STYLE_PROMPT = "\n".join(
+    [
+        "Фон в каждой карточке одинаковый",
+        "Все подписи и цифры делай одним шрифтом",
+        (
+            "Главный персонаж всегда узнаётся: сохраняй фирменные цвета, причёску и ключевые "
+            "аксессуары, но меняй позы, эмоции и ракурс, допускай разные техники рисования в "
+            "пределах общего стиля референсов"
+        ),
+        (
+            "Располагай героя так, чтобы он естественно вписывался в сетку листа и не повторялся "
+            "один-в-один между кадрами."
+        ),
+    ]
 )
 STATUS_LABELS = {
     "pending": "В очереди",
@@ -563,7 +571,10 @@ app = create_app()
 def _build_generation_prompt(user_prompt: str) -> str:
     """Attach hidden style prompt to keep a consistent visual collection."""
 
-    return f"{user_prompt}\n\n{SECRET_STYLE_PROMPT}"
+    base_prompt = user_prompt.rstrip()
+    full_prompt = f"{base_prompt}\n\n{SECRET_STYLE_PROMPT}"
+    app.logger.debug("Generation prompt (no tuple syntax expected): %s", full_prompt.replace("\n", "\\n"))
+    return full_prompt
 
 
 def _load_yaml_prompts(upload: FileStorage) -> List[str]:
