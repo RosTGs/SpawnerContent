@@ -292,6 +292,12 @@ def create_app() -> Flask:
             "STATUS_LABELS": STATUS_LABELS,
         }
 
+    @app.before_request
+    def refresh_state() -> None:
+        """Reload saved generations so all workers share the same state."""
+
+        _load_saved_generations()
+
     @app.route("/")
     def index() -> str:
         progress = {
