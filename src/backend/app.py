@@ -79,6 +79,7 @@ class GenerationEntry:
     image_statuses: List[str] = field(default_factory=list)
     image_approvals: List[bool] = field(default_factory=list)
     pdf_image_candidates: List[List[str]] = field(default_factory=list)
+    image_history: List[List[str]] = field(default_factory=list)
     background_references: List[str] = field(default_factory=list)
     detail_references: List[str] = field(default_factory=list)
     text_parts: List[str] = field(default_factory=list)
@@ -146,6 +147,17 @@ class GenerationEntry:
             )
             status = self.image_statuses[index] if index < len(self.image_statuses) else self.status
             approved = self.image_approvals[index] if index < len(self.image_approvals) else False
+            history_paths = self.image_history[index] if index < len(self.image_history) else []
+            history: list[dict[str, object]] = []
+            for version_path in history_paths:
+                version_normalized = self._normalize_image_path(version_path)
+                history.append(
+                    {
+                        "filename": version_normalized.name,
+                        "asset_name": _to_asset_name(str(version_normalized)),
+                        "exists": version_normalized.exists(),
+                    }
+                )
             images.append(
                 {
                     "filename": filename,
@@ -154,6 +166,7 @@ class GenerationEntry:
                     "status": status,
                     "approved": approved,
                     "index": index,
+                    "history": history,
                 }
             )
         return images
@@ -233,6 +246,7 @@ def _persist_generation(entry: GenerationEntry) -> None:
     serializable["image_paths"] = [str(path) if path else None for path in entry.image_paths]
     serializable["background_references"] = [str(ref) for ref in entry.background_references]
     serializable["detail_references"] = [str(ref) for ref in entry.detail_references]
+    serializable["image_history"] = [[str(path) for path in group] for group in entry.image_history]
     state_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -262,6 +276,7 @@ def _load_saved_generations() -> None:
             text_parts=data.get("text_parts", []),
             status=data.get("status", "pending"),
             approved=data.get("approved", False),
+            image_history=data.get("image_history", []),
         )
         _ensure_image_lists(entry)
         entry.recalc_flags()
@@ -357,6 +372,18 @@ def create_app() -> Flask:
                         if image["exists"]
                         else None,
                         "filename": image["filename"],
+                        "history": [
+                            {
+                                "asset_url": url_for(
+                                    "serve_asset", filename=item["asset_name"]
+                                )
+                                if item["exists"]
+                                else None,
+                                "filename": item["filename"],
+                                "exists": item["exists"],
+                            }
+                            for item in image.get("history", [])
+                        ],
                     }
                 )
 
@@ -581,6 +608,21 @@ def _ensure_image_lists(entry: GenerationEntry) -> None:
         entry.image_approvals.extend([False] * (expected - len(entry.image_approvals)))
     if len(entry.pdf_image_candidates) < expected:
         entry.pdf_image_candidates.extend([[] for _ in range(expected - len(entry.pdf_image_candidates))])
+    if len(entry.image_history) < expected:
+        entry.image_history.extend([[] for _ in range(expected - len(entry.image_history))])
+    for index in range(expected):
+        path = entry.image_paths[index] if index < len(entry.image_paths) else None
+        history = entry.image_history[index]
+        if path and path not in history:
+            history.append(path)
+
+
+def _record_image_version(entry: GenerationEntry, index: int, path: str) -> None:
+    _ensure_image_lists(entry)
+    entry.image_paths[index] = path
+    history = entry.image_history[index]
+    if path not in history:
+        history.append(path)
 
 
 def _register_generation(
@@ -652,7 +694,7 @@ def _run_generation(
                 template_files=entry.all_references,
                 output_path=target_path,
             )
-            entry.image_paths[prompt_index] = result.image_path
+            _record_image_version(entry, prompt_index, result.image_path)
             entry.image_statuses[prompt_index] = "ready"
             entry.image_approvals[prompt_index] = False
             entry.latest_image = result.image_path
@@ -665,6 +707,8 @@ def _run_generation(
 
         if target_index is None:
             entry.image_paths = generated_images
+            for idx, path in enumerate(generated_images):
+                _record_image_version(entry, idx, path)
             entry.text_parts = collected_text_parts
             entry.pdf_image_candidates = collected_alternate_images
         elif collected_text_parts:

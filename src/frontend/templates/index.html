@@ -245,6 +245,46 @@
       .image-card .actions {
         margin-top: 0;
       }
+      .history-block {
+        margin-top: 12px;
+        border-top: 1px solid #e2e8f0;
+        padding-top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .history-heading {
+        font-weight: 700;
+        font-size: 13px;
+        color: #0f172a;
+      }
+      .history-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+      }
+      .history-item {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #f8fafc;
+        text-decoration: none;
+        color: inherit;
+      }
+      .history-item img {
+        width: 100%;
+        height: 80px;
+        object-fit: cover;
+        border-radius: 8px;
+        background: #e2e8f0;
+      }
+      .history-label {
+        font-size: 12px;
+        color: #475569;
+      }
       .preview .placeholder {
         width: 100%;
         padding: 32px;
@@ -710,6 +750,23 @@
                               <button class="button secondary" type="submit" data-action-regenerate {% if image.status in ['generating', 'regenerating', 'pending'] or progress.active %}disabled{% endif %}>↻ Регенерировать</button>
                             </form>
                           </div>
+                          {% if image.history %}
+                            <div class="history-block" data-image-history>
+                              <div class="history-heading">История версий</div>
+                              <div class="history-grid">
+                                {% for version in image.history %}
+                                  <a class="history-item" href="{{ url_for('serve_asset', filename=version.asset_name) if version.exists else '#' }}" target="_blank" rel="noopener noreferrer">
+                                    {% if version.exists %}
+                                      <img src="{{ url_for('serve_asset', filename=version.asset_name) }}" alt="Версия {{ loop.index }} для листа {{ image.index + 1 }}">
+                                    {% else %}
+                                      <span class="placeholder" style="font-size: 12px;">Файл {{ version.filename }} не найден</span>
+                                    {% endif %}
+                                    <span class="history-label">v{{ loop.index }}</span>
+                                  </a>
+                                {% endfor %}
+                              </div>
+                            </div>
+                          {% endif %}
                         </div>
                       {% endfor %}
                     </div>
@@ -914,6 +971,8 @@
           }
         }
 
+        renderHistory(card, image.history);
+
         syncImageActions(card, image);
       };
 
@@ -964,6 +1023,65 @@
         }
 
         applyGenFilters();
+      };
+
+      const renderHistory = (imageCard, history) => {
+        const existing = imageCard.querySelector('[data-image-history]');
+        if (!history || history.length === 0) {
+          if (existing) existing.remove();
+          return;
+        }
+
+        let container = existing;
+        if (!container) {
+          container = document.createElement('div');
+          container.className = 'history-block';
+          container.dataset.imageHistory = '';
+          const actions = imageCard.querySelector('.actions');
+          if (actions?.parentNode) {
+            actions.parentNode.insertBefore(container, actions.nextElementSibling);
+          } else {
+            imageCard.appendChild(container);
+          }
+        }
+
+        container.innerHTML = '';
+        const heading = document.createElement('div');
+        heading.className = 'history-heading';
+        heading.textContent = 'История версий';
+        container.appendChild(heading);
+
+        const grid = document.createElement('div');
+        grid.className = 'history-grid';
+        history.forEach((item, index) => {
+          const link = document.createElement('a');
+          link.className = 'history-item';
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+
+          if (item.asset_url) {
+            link.href = item.asset_url;
+            const img = document.createElement('img');
+            img.src = item.asset_url;
+            img.alt = `Версия ${index + 1}`;
+            link.appendChild(img);
+          } else {
+            link.href = '#';
+            const placeholder = document.createElement('span');
+            placeholder.className = 'placeholder';
+            placeholder.style.fontSize = '12px';
+            placeholder.textContent = `Файл ${item.filename || ''} не найден`;
+            link.appendChild(placeholder);
+          }
+
+          const label = document.createElement('span');
+          label.className = 'history-label';
+          label.textContent = `v${index + 1}`;
+          link.appendChild(label);
+          grid.appendChild(link);
+        });
+
+        container.appendChild(grid);
       };
 
       const fetchStatus = async () => {
