@@ -409,10 +409,12 @@ def create_app() -> Flask:
 
     @app.post("/generate")
     def generate() -> str:
-        api_key = request.form.get("api_key") or _settings.api_key or None
+        api_key = _settings.api_key or None
         aspect_ratio = request.form.get("aspect_ratio", ASPECT_RATIOS[0])
         resolution = request.form.get("resolution", RESOLUTIONS[0])
         sheet_prompts = [block.strip() for block in request.form.getlist("sheet_prompts") if block.strip()]
+        selected_background = request.form.getlist("selected_background_references")
+        selected_detail = request.form.getlist("selected_detail_references")
 
         yaml_prompts: List[str] = []
         yaml_file = request.files.get("prompt_yaml")
@@ -432,42 +434,24 @@ def create_app() -> Flask:
             flash("Добавьте хотя бы один промт листа для генерации.", "error")
             return redirect(url_for("index"))
 
-        background_refs = _save_reference_uploads(
-            request.files.getlist("background_references"),
-            generation_id=_next_generation_id,
-            prefix="bg",
-        )
-        detail_refs = _save_reference_uploads(
-            request.files.getlist("detail_references"),
-            generation_id=_next_generation_id,
-            prefix="detail",
-        )
-
-        merged_background_refs = _merge_references(
-            _settings.background_references, background_refs
-        )
-        merged_detail_refs = _merge_references(
-            _settings.detail_references, detail_refs
-        )
-
-        _settings.background_references = merged_background_refs
-        _settings.detail_references = merged_detail_refs
-        if background_refs or detail_refs:
-            save_settings(_settings)
+        background_refs = [
+            ref for ref in _settings.background_references if ref in selected_background
+        ]
+        detail_refs = [ref for ref in _settings.detail_references if ref in selected_detail]
 
         entry = _register_generation(
             sheet_prompts=sheet_prompts,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
-            background_references=merged_background_refs,
-            detail_references=merged_detail_refs,
+            background_references=background_refs,
+            detail_references=detail_refs,
         )
         _run_generation(entry, api_key)
         return redirect(url_for("index"))
 
     @app.post("/regenerate/<int:generation_id>/image/<int:image_index>")
     def regenerate_image(generation_id: int, image_index: int) -> str:
-        api_key = request.form.get("api_key") or _settings.api_key or None
+        api_key = _settings.api_key or None
         entry = _find_generation(generation_id)
         if not entry:
             flash("Не удалось найти указанную генерацию.", "error")
@@ -485,11 +469,21 @@ def create_app() -> Flask:
     @app.post("/settings")
     def update_settings() -> str:
         api_key = (request.form.get("saved_api_key") or "").strip()
+        background_uploads = _save_reference_uploads(
+            request.files.getlist("background_references"), prefix="settings-bg"
+        )
+        detail_uploads = _save_reference_uploads(
+            request.files.getlist("detail_references"), prefix="settings-detail"
+        )
         global _settings
         _settings = Settings(
             api_key=api_key,
-            background_references=_settings.background_references,
-            detail_references=_settings.detail_references,
+            background_references=_merge_references(
+                _settings.background_references, background_uploads
+            ),
+            detail_references=_merge_references(
+                _settings.detail_references, detail_uploads
+            ),
         )
         save_settings(_settings)
         flash("Настройки сохранены и будут использоваться по умолчанию.", "success")
@@ -815,13 +809,17 @@ def _load_yaml_prompts(upload: FileStorage) -> List[str]:
     return prompts
 
 
-def _save_reference_uploads(files, *, generation_id: int, prefix: str) -> List[str]:
+def _save_reference_uploads(
+    files, *, generation_id: Optional[int] = None, prefix: str
+) -> List[str]:
     saved: List[str] = []
     for upload in files:
         if not upload or not upload.filename:
             continue
         saved_path = save_uploaded_file(
-            upload, prefix=f"gen-{generation_id}-{prefix}", generation_id=generation_id
+            upload,
+            prefix=f"gen-{generation_id}-{prefix}" if generation_id else prefix,
+            generation_id=generation_id,
         )
         saved.append(str(saved_path))
     return saved
